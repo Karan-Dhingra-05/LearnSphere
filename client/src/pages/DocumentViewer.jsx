@@ -17,8 +17,10 @@ import {
 import { getDocument } from '../services/documentService.js';
 import { sendChatMessage } from '../services/aiService.js';
 import { createSummary, regenerateSummary } from '../services/summaryService.js';
+import { getFlashcards } from '../services/flashcardService.js';
 import ChatPanel from '../components/ChatPanel.jsx';
 import SummaryPanel from '../components/SummaryPanel.jsx';
+import FlashcardPanel from '../components/FlashcardPanel.jsx';
 
 const WORKER_URL =
   'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -82,6 +84,11 @@ const DocumentViewer = () => {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState(null);
 
+  // ── Flashcard state ──────────────────────────────────────────────────────────
+  const [flashcardSet, setFlashcardSet] = useState(null);
+  const [flashcardLoading, setFlashcardLoading] = useState(false);
+  const [flashcardError, setFlashcardError] = useState(null);
+
   // ── PDF viewer plugin ─────────────────────────────────────────────────────────
   const defaultLayoutPluginInstance = defaultLayoutPlugin({
     sidebarTabs: () => [],
@@ -121,11 +128,13 @@ const DocumentViewer = () => {
   useEffect(() => {
     const fetchDocument = async () => {
       try {
-        const { data } = await getDocument(id);
-        setDocument(data);
-        if (data.summary) {
-          setSummary(data.summary);
-        }
+        const [{ data: docData }, { data: fcData }] = await Promise.all([
+          getDocument(id),
+          getFlashcards(id).catch(() => ({ data: { flashcardSet: null } })),
+        ]);
+        setDocument(docData);
+        if (docData.summary) setSummary(docData.summary);
+        if (fcData.flashcardSet) setFlashcardSet(fcData.flashcardSet);
       } catch {
         toast.error('Document not found');
         navigate('/documents');
@@ -310,16 +319,28 @@ const DocumentViewer = () => {
           />
         </div>
 
-        {/* Placeholder tabs — Flashcards, Quiz */}
-        {['flashcards', 'quiz'].map((tabId) => (
-          <div
-            key={tabId}
-            className="viewer-tab-panel viewer-tab-panel--placeholder"
-            style={{ display: activeTab === tabId ? 'flex' : 'none' }}
-          >
-            <TabPlaceholder tabId={tabId} />
-          </div>
-        ))}
+        {/* Flashcards — always mounted */}
+        <div
+          className="viewer-tab-panel viewer-tab-panel--flashcards"
+          style={{ display: activeTab === 'flashcards' ? 'flex' : 'none' }}
+        >
+          <FlashcardPanel
+            documentId={id}
+            flashcardSet={flashcardSet}
+            loading={flashcardLoading}
+            error={flashcardError}
+            onSetLoaded={setFlashcardSet}
+            onDismissError={() => setFlashcardError(null)}
+          />
+        </div>
+
+        {/* Placeholder tab — Quiz */}
+        <div
+          className="viewer-tab-panel viewer-tab-panel--placeholder"
+          style={{ display: activeTab === 'quiz' ? 'flex' : 'none' }}
+        >
+          <TabPlaceholder tabId="quiz" />
+        </div>
       </div>
     </div>
   );

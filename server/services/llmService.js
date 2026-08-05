@@ -299,4 +299,138 @@ const generateSummary = async (documentId) => {
   return consolidateSummaries(partialSummaries);
 };
 
-export { chatWithDocument, generateSummary };
+// ─── AI Flashcards — chunk-based, full-document pipeline ─────────────────────
+// Mirrors the Summary pipeline: same constants, same batching strategy.
+
+const FLASHCARD_SYSTEM = `You are LearnSphere AI, an expert educational flashcard generator.
+Generate flashcards that help students study the provided document content.
+
+Rules:
+- Use ONLY information from the document. Do NOT add external knowledge.
+- Generate EXACTLY 10 flashcards.
+- Each flashcard must have exactly three fields: "question", "answer", "difficulty".
+- difficulty must be one of: "Easy", "Medium", "Hard".
+- Prioritize: definitions, key concepts, important facts, algorithms, formulae, comparisons.
+- Questions must be clear and unambiguous.
+- Answers must be concise but complete.
+- Avoid trivial or duplicate questions.
+- Return ONLY a valid JSON array. No explanation. No markdown. No code fences.
+
+Example output format:
+[
+  { "question": "What is a binary search tree?", "answer": "A BST is a tree where each node's left subtree contains only nodes with lesser keys and the right subtree contains only nodes with greater keys.", "difficulty": "Easy" },
+  { "question": "What is the time complexity of BST search in the worst case?", "answer": "O(n) — when the tree is completely unbalanced (degenerate).", "difficulty": "Hard" }
+]`;
+
+const FLASHCARD_CANDIDATE_SYSTEM = `You are LearnSphere AI, an expert educational flashcard generator.
+Generate flashcards that help students study the provided document content.
+
+Rules:
+- Use ONLY information from the document. Do NOT add external knowledge.
+- Generate 3–4 candidate flashcards from this specific section of the document.
+- Each flashcard must have exactly three fields: "question", "answer", "difficulty".
+- difficulty must be one of: "Easy", "Medium", "Hard".
+- Prioritize: definitions, key concepts, important facts, algorithms, formulae, comparisons.
+- Questions must be clear and unambiguous.
+- Answers must be concise but complete.
+- Avoid trivial or duplicate questions.
+- Return ONLY a valid JSON array. No explanation. No markdown. No code fences.`;
+
+const FLASHCARD_MERGE_SYSTEM = `You are LearnSphere AI.
+You will receive several batches of candidate flashcards (as JSON arrays) generated from different sections of the same document.
+Merge them into one final JSON array.
+
+Rules:
+- Remove duplicate questions.
+- Keep the highest-quality flashcards.
+- Ensure coverage of different document sections.
+- Return EXACTLY 10 flashcards.
+- Return ONLY a valid JSON array of flashcard objects, each with "question", "answer", and "difficulty".
+- No explanation. No markdown. No code fences.`;
+
+/**
+ * Parses the LLM's text output into a flashcard array.
+ * Handles cases where the model accidentally wraps the JSON in markdown fences.
+ *
+ * @param {string} text - Raw LLM response.
+ * @returns {Array}     - Parsed array of {question, answer, difficulty}.
+ */
+const parseFlashcardJSON = (text) => {
+  // Strip markdown code fences if present
+  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  return JSON.parse(cleaned);
+};
+
+/**
+ * Generates flashcards from a single text batch and returns a parsed array.
+ */
+const generateFlashcardsFromText = async (text, systemPrompt = FLASHCARD_SYSTEM) => {
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: `Generate flashcards from this document content:\n\n${text}` },
+  ];
+  const raw = await callGroq(messages, 2048, 0.4);
+  return parseFlashcardJSON(raw);
+};
+
+/**
+ * Generates flashcards from a long document by batching then merging.
+ */
+const generateFlashcardsFromBatches = async (fullText) => {
+  const batches = [];
+  for (let i = 0; i < fullText.length; i += BATCH_SIZE) {
+    batches.push(fullText.slice(i, i + BATCH_SIZE));
+  }
+
+  const allCards = [];
+  for (let i = 0; i < batches.length; i++) {
+    // eslint-disable-next-line no-await-in-loop
+    const cards = await generateFlashcardsFromText(batches[i], FLASHCARD_CANDIDATE_SYSTEM);
+    allCards.push(...cards);
+  }
+
+  // Merge via a consolidation call to deduplicate and clean up
+  const combined = JSON.stringify(allCards, null, 2);
+  const messages = [
+    { role: 'system', content: FLASHCARD_MERGE_SYSTEM },
+    { role: 'user', content: `Merge, filter, and finalize exactly 10 flashcards from these candidates:\n\n${combined}` },
+  ];
+  const raw = await callGroq(messages, 2048, 0.3);
+  return parseFlashcardJSON(raw);
+};
+
+/**
+ * Generates a set of flashcards covering the entire document.
+ *
+ * Pipeline:
+ *   1. Load all DocumentChunks from MongoDB (sorted by chunkIndex).
+ *   2. Concatenate to get full document text.
+ *   3. If text ≤ SINGLE_PASS_LIMIT → one Groq call.
+ *      If text  > SINGLE_PASS_LIMIT → batch + merge.
+ *   4. Return parsed array of {question, answer, difficulty}.
+ *
+ * @param {string} documentId - MongoDB Document _id.
+ * @returns {Promise<Array>}  - Array of flashcard objects.
+ */
+const generateFlashcards = async (documentId) => {
+  // ── 1. Load all chunks in order ──────────────────────────────────────────────
+  const chunks = await DocumentChunk.find({ documentId })
+    .sort({ chunkIndex: 1 })
+    .select('text -_id');
+
+  if (!chunks || chunks.length === 0) {
+    throw new Error('No document chunks found. The document may not have been processed yet.');
+  }
+
+  // ── 2. Concatenate into full text ────────────────────────────────────────────
+  const fullText = chunks.map((c) => c.text).join('\n\n');
+
+  // ── 3. Single-pass or batched ────────────────────────────────────────────────
+  if (fullText.length <= SINGLE_PASS_LIMIT) {
+    return generateFlashcardsFromText(fullText);
+  }
+  return generateFlashcardsFromBatches(fullText);
+};
+
+export { chatWithDocument, generateSummary, generateFlashcards };
+

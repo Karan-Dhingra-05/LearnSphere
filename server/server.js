@@ -10,6 +10,7 @@ import documentRoutes from './routes/documentRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
 import summaryRoutes from './routes/summaryRoutes.js';
+import flashcardRoutes from './routes/flashcardRoutes.js';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 import { initializeRAG } from './services/retrievalService.js';
 
@@ -42,6 +43,7 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/summary', summaryRoutes);
+app.use('/api/flashcards', flashcardRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -1,9 +1,11 @@
 import mongoose from 'mongoose';
 
 const flashcardSchema = new mongoose.Schema({
-  question: { type: String, required: true },
-  answer: { type: String, required: true },
-  favorite: { type: Boolean, default: false },
+  question:   { type: String, required: true },
+  answer:     { type: String, required: true },
+  difficulty: { type: String, enum: ['Easy', 'Medium', 'Hard'], default: 'Medium' },
+  favorite:   { type: Boolean, default: false },
+  reviewed:   { type: Boolean, default: false },
 });
 
 const flashcardSetSchema = new mongoose.Schema(
