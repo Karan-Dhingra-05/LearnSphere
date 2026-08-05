@@ -47,16 +47,11 @@ const createSummary = asyncHandler(async (req, res) => {
   const document = await Document.findOne({
     _id: documentId,
     userId: req.user._id,
-  }).select('extractedText summary');
+  }).select('summary');
 
   if (!document) {
     res.status(404);
     throw new Error('Document not found.');
-  }
-
-  if (!document.extractedText || document.extractedText.trim().length === 0) {
-    res.status(422);
-    throw new Error('This document has no extractable text. Summary requires a text-based PDF.');
   }
 
   // Return cached summary if it already exists
@@ -65,7 +60,7 @@ const createSummary = asyncHandler(async (req, res) => {
   }
 
   try {
-    const summary = await generateSummary(document.extractedText);
+    const summary = await generateSummary(documentId);
 
     // Persist to MongoDB so future requests skip the AI call
     document.summary = summary;
@@ -74,6 +69,12 @@ const createSummary = asyncHandler(async (req, res) => {
     res.json({ summary, cached: false });
   } catch (err) {
     console.error('[Summary Error]', err?.message?.slice(0, 200));
+    // Surface chunk-not-found as a 422 (unprocessable) rather than a 500
+    if (err?.message?.includes('No document chunks found')) {
+      return res.status(422).json({
+        message: 'This document has not been processed yet. Please wait a moment and try again.',
+      });
+    }
     const { status, message } = parseLLMError(err);
     res.status(status).json({ message });
   }
@@ -88,20 +89,15 @@ const regenerateSummary = asyncHandler(async (req, res) => {
   const document = await Document.findOne({
     _id: documentId,
     userId: req.user._id,
-  }).select('extractedText summary');
+  }).select('summary');
 
   if (!document) {
     res.status(404);
     throw new Error('Document not found.');
   }
 
-  if (!document.extractedText || document.extractedText.trim().length === 0) {
-    res.status(422);
-    throw new Error('This document has no extractable text. Summary requires a text-based PDF.');
-  }
-
   try {
-    const summary = await generateSummary(document.extractedText);
+    const summary = await generateSummary(documentId);
 
     document.summary = summary;
     await document.save();
@@ -109,6 +105,11 @@ const regenerateSummary = asyncHandler(async (req, res) => {
     res.json({ summary, cached: false });
   } catch (err) {
     console.error('[Summary Regenerate Error]', err?.message?.slice(0, 200));
+    if (err?.message?.includes('No document chunks found')) {
+      return res.status(422).json({
+        message: 'This document has not been processed yet. Please wait a moment and try again.',
+      });
+    }
     const { status, message } = parseLLMError(err);
     res.status(status).json({ message });
   }

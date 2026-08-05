@@ -1,5 +1,6 @@
 import Groq from 'groq-sdk';
 import { retrieveRelevantChunks } from './retrievalService.js';
+import DocumentChunk from '../models/DocumentChunk.js';
 
 const MODEL = 'llama-3.3-70b-versatile';
 
@@ -162,8 +163,11 @@ const chatWithDocument = async (documentId, history, userMessage, extractedText 
   return callGroq(messages, 2048, 0.4);
 };
 
-// ─── AI Summary ───────────────────────────────────────────────────────────────
-// (unchanged — still uses extractedText.slice; Phase 5C will migrate this)
+// ─── AI Summary — chunk-based, full-document pipeline ────────────────────────
+
+// Character budget constants (tune here if needed)
+const SINGLE_PASS_LIMIT = 20000; // chars — send as one call below this threshold
+const BATCH_SIZE        = 18000; // chars — size of each batch above the threshold
 
 const SUMMARY_SYSTEM = `You are LearnSphere AI, an expert educational summariser.
 Your task is to produce a structured summary of the provided document content.
@@ -194,22 +198,105 @@ Rules:
 
 Be concise, accurate, and easy to understand.`;
 
+const CONSOLIDATION_SYSTEM = `You are LearnSphere AI, an expert educational summariser.
+You will receive several partial summaries of different sections of the same document.
+Combine them into a single, coherent, structured summary.
+
+Rules:
+- Merge overlapping points — do NOT repeat the same idea twice.
+- Use ONLY information from the partial summaries provided.
+- Format the output in clean Markdown using the same sections as the partial summaries.
+- Be concise and accurate.`;
+
 /**
- * Generates a structured Markdown summary of the document.
- * Still uses extractedText — will be migrated in Phase 5C.
+ * Summarises one batch of text (a slice of the full document).
  *
- * @param {string} documentText - extractedText from MongoDB.
- * @returns {Promise<string>}   - Markdown-formatted summary.
+ * @param {string} textBatch - A portion of the document text.
+ * @param {number} batchNum  - 1-based batch number (for context in the prompt).
+ * @param {number} total     - Total number of batches.
+ * @returns {Promise<string>} - Partial Markdown summary.
  */
-const generateSummary = async (documentText) => {
+const summariseBatch = (textBatch, batchNum, total) => {
   const messages = [
     { role: 'system', content: SUMMARY_SYSTEM },
     {
       role: 'user',
-      content: `Please summarise the following document:\n\n${documentText.slice(0, 25000)}`,
+      content:
+        `This is part ${batchNum} of ${total} of the document. Please summarise this section:\n\n${textBatch}`,
+    },
+  ];
+  return callGroq(messages, 1500, 0.3);
+};
+
+/**
+ * Consolidates an array of partial summaries into one final summary.
+ *
+ * @param {string[]} partials - Partial summaries from each batch.
+ * @returns {Promise<string>} - Final merged Markdown summary.
+ */
+const consolidateSummaries = (partials) => {
+  const combined = partials
+    .map((s, i) => `### Part ${i + 1} Summary\n\n${s}`)
+    .join('\n\n---\n\n');
+  const messages = [
+    { role: 'system', content: CONSOLIDATION_SYSTEM },
+    {
+      role: 'user',
+      content: `Please combine these partial summaries into one final summary:\n\n${combined}`,
     },
   ];
   return callGroq(messages, 2048, 0.3);
+};
+
+/**
+ * Generates a structured Markdown summary of a document.
+ *
+ * Pipeline:
+ *   1. Load all DocumentChunks from MongoDB (sorted by chunkIndex).
+ *   2. Concatenate them to get the full document text.
+ *   3. If text ≤ SINGLE_PASS_LIMIT → one Groq call.
+ *      If text  > SINGLE_PASS_LIMIT → slice into BATCH_SIZE batches,
+ *        summarise each sequentially, then consolidate into one final summary.
+ *
+ * @param {string} documentId - MongoDB Document _id.
+ * @returns {Promise<string>} - Markdown-formatted summary.
+ */
+const generateSummary = async (documentId) => {
+  // ── 1. Load all chunks in order ──────────────────────────────────────────────
+  const chunks = await DocumentChunk.find({ documentId })
+    .sort({ chunkIndex: 1 })
+    .select('text -_id');
+
+  if (!chunks || chunks.length === 0) {
+    throw new Error('No document chunks found. The document may not have been processed yet.');
+  }
+
+  // ── 2. Concatenate into full text ────────────────────────────────────────────
+  const fullText = chunks.map((c) => c.text).join('\n\n');
+
+  // ── 3a. Short document — single Groq call ────────────────────────────────────
+  if (fullText.length <= SINGLE_PASS_LIMIT) {
+    const messages = [
+      { role: 'system', content: SUMMARY_SYSTEM },
+      { role: 'user', content: `Please summarise the following document:\n\n${fullText}` },
+    ];
+    return callGroq(messages, 2048, 0.3);
+  }
+
+  // ── 3b. Long document — sequential batch summarisation + consolidation ────────
+  const batches = [];
+  for (let i = 0; i < fullText.length; i += BATCH_SIZE) {
+    batches.push(fullText.slice(i, i + BATCH_SIZE));
+  }
+
+  const partialSummaries = [];
+  for (let i = 0; i < batches.length; i++) {
+    // eslint-disable-next-line no-await-in-loop
+    const partial = await summariseBatch(batches[i], i + 1, batches.length);
+    partialSummaries.push(partial);
+  }
+
+  return consolidateSummaries(partialSummaries);
 };
 
 export { chatWithDocument, generateSummary };
