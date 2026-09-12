@@ -12,13 +12,17 @@ const createClient = () => {
   return new Groq({ apiKey: process.env.GROQ_API_KEY });
 };
 
-const callGroq = async (messages, maxTokens = 2048, temperature = 0.4) => {
+// `responseFormat` is optional and only used by callers that need Groq's JSON
+// mode (currently flashcards). Omitting it (Chat, Summary) keeps the request
+// body identical to before this parameter existed.
+const callGroq = async (messages, maxTokens = 2048, temperature = 0.4, responseFormat) => {
   const client = createClient();
   const completion = await client.chat.completions.create({
     model: MODEL,
     messages,
     max_tokens: maxTokens,
     temperature,
+    ...(responseFormat ? { response_format: responseFormat } : {}),
   });
   const text = completion.choices?.[0]?.message?.content;
   if (!text || text.trim().length === 0) {
@@ -302,6 +306,17 @@ const generateSummary = async (documentId) => {
 // ─── AI Flashcards — chunk-based, full-document pipeline ─────────────────────
 // Mirrors the Summary pipeline: same constants, same batching strategy.
 
+// Token budgets: candidate batches only need a handful of cards, so their
+// limit stays as it was. The two paths that must return exactly 10 complete
+// cards (single-pass and merge) get a higher ceiling so valid JSON isn't cut
+// off mid-generation.
+const CANDIDATE_MAX_TOKENS = 2048;
+const FULL_SET_MAX_TOKENS = 4096;
+
+// Groq JSON mode requires a top-level JSON object (not a bare array), so all
+// flashcard prompts ask for {"flashcards": [...]}.
+const FLASHCARD_JSON_FORMAT = { type: 'json_object' };
+
 const FLASHCARD_SYSTEM = `You are LearnSphere AI, an expert educational flashcard generator.
 Generate flashcards that help students study the provided document content.
 
@@ -314,13 +329,15 @@ Rules:
 - Questions must be clear and unambiguous.
 - Answers must be concise but complete.
 - Avoid trivial or duplicate questions.
-- Return ONLY a valid JSON array. No explanation. No markdown. No code fences.
+- Return ONLY a valid JSON object with a single key "flashcards" whose value is an array of exactly 10 flashcard objects. No explanation. No markdown. No code fences.
 
 Example output format:
-[
-  { "question": "What is a binary search tree?", "answer": "A BST is a tree where each node's left subtree contains only nodes with lesser keys and the right subtree contains only nodes with greater keys.", "difficulty": "Easy" },
-  { "question": "What is the time complexity of BST search in the worst case?", "answer": "O(n) — when the tree is completely unbalanced (degenerate).", "difficulty": "Hard" }
-]`;
+{
+  "flashcards": [
+    { "question": "What is a binary search tree?", "answer": "A BST is a tree where each node's left subtree contains only nodes with lesser keys and the right subtree contains only nodes with greater keys.", "difficulty": "Easy" },
+    { "question": "What is the time complexity of BST search in the worst case?", "answer": "O(n) — when the tree is completely unbalanced (degenerate).", "difficulty": "Hard" }
+  ]
+}`;
 
 const FLASHCARD_CANDIDATE_SYSTEM = `You are LearnSphere AI, an expert educational flashcard generator.
 Generate flashcards that help students study the provided document content.
@@ -334,23 +351,25 @@ Rules:
 - Questions must be clear and unambiguous.
 - Answers must be concise but complete.
 - Avoid trivial or duplicate questions.
-- Return ONLY a valid JSON array. No explanation. No markdown. No code fences.`;
+- Return ONLY a valid JSON object with a single key "flashcards" whose value is an array of the candidate flashcard objects. No explanation. No markdown. No code fences.`;
 
 const FLASHCARD_MERGE_SYSTEM = `You are LearnSphere AI.
-You will receive several batches of candidate flashcards (as JSON arrays) generated from different sections of the same document.
-Merge them into one final JSON array.
+You will receive several batches of candidate flashcards (as a JSON array) generated from different sections of the same document.
+Merge them into one final set.
 
 Rules:
 - Remove duplicate questions.
 - Keep the highest-quality flashcards.
 - Ensure coverage of different document sections.
 - Return EXACTLY 10 flashcards.
-- Return ONLY a valid JSON array of flashcard objects, each with "question", "answer", and "difficulty".
+- Return ONLY a valid JSON object with a single key "flashcards" whose value is an array of exactly 10 flashcard objects, each with "question", "answer", and "difficulty".
 - No explanation. No markdown. No code fences.`;
 
 /**
  * Parses the LLM's text output into a flashcard array.
- * Handles cases where the model accidentally wraps the JSON in markdown fences.
+ * Accepts either a bare JSON array or the preferred {"flashcards": [...]}
+ * object shape, and strips markdown code fences if the model adds them
+ * despite JSON mode being requested.
  *
  * @param {string} text - Raw LLM response.
  * @returns {Array}     - Parsed array of {question, answer, difficulty}.
@@ -358,18 +377,64 @@ Rules:
 const parseFlashcardJSON = (text) => {
   // Strip markdown code fences if present
   const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-  return JSON.parse(cleaned);
+  const parsed = JSON.parse(cleaned);
+
+  const cards = Array.isArray(parsed) ? parsed : parsed?.flashcards;
+  if (!Array.isArray(cards)) {
+    throw new Error('LLM response did not contain a flashcards array.');
+  }
+  return cards;
+};
+
+/**
+ * Throws if `cards` is not an array of exactly 10 items. Used at every point
+ * where the pipeline is expected to produce the final 10-card set, so a
+ * non-compliant LLM response fails loudly instead of being saved as-is.
+ *
+ * @param {Array}  cards - Parsed flashcard array to check.
+ * @param {string} stage - Human-readable description of the pipeline stage, for the error message.
+ * @returns {Array} The same array, for chaining.
+ */
+const ensureExactlyTen = (cards, stage) => {
+  if (!Array.isArray(cards) || cards.length !== 10) {
+    const count = Array.isArray(cards) ? cards.length : 'a non-array result';
+    throw new Error(`Flashcard generation failed: expected exactly 10 flashcards ${stage}, but got ${count}.`);
+  }
+  return cards;
+};
+
+const normalizeQuestion = (q) => (q || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+/**
+ * Removes flashcards whose question text is an exact match after
+ * normalisation (trim, lowercase, collapsed whitespace). This is a safety
+ * net for the merge step's "remove duplicate questions" instruction — no
+ * semantic/paraphrase detection is attempted, by design.
+ *
+ * @param {Array} cards - Flashcard array to dedupe.
+ * @returns {Array}     - Deduplicated flashcard array (order preserved).
+ */
+const dedupeByQuestion = (cards) => {
+  const seen = new Set();
+  const result = [];
+  for (const card of cards) {
+    const key = normalizeQuestion(card.question);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(card);
+  }
+  return result;
 };
 
 /**
  * Generates flashcards from a single text batch and returns a parsed array.
  */
-const generateFlashcardsFromText = async (text, systemPrompt = FLASHCARD_SYSTEM) => {
+const generateFlashcardsFromText = async (text, systemPrompt = FLASHCARD_SYSTEM, maxTokens = CANDIDATE_MAX_TOKENS) => {
   const messages = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: `Generate flashcards from this document content:\n\n${text}` },
   ];
-  const raw = await callGroq(messages, 2048, 0.4);
+  const raw = await callGroq(messages, maxTokens, 0.4, FLASHCARD_JSON_FORMAT);
   return parseFlashcardJSON(raw);
 };
 
@@ -385,7 +450,7 @@ const generateFlashcardsFromBatches = async (fullText) => {
   const allCards = [];
   for (let i = 0; i < batches.length; i++) {
     // eslint-disable-next-line no-await-in-loop
-    const cards = await generateFlashcardsFromText(batches[i], FLASHCARD_CANDIDATE_SYSTEM);
+    const cards = await generateFlashcardsFromText(batches[i], FLASHCARD_CANDIDATE_SYSTEM, CANDIDATE_MAX_TOKENS);
     allCards.push(...cards);
   }
 
@@ -395,8 +460,11 @@ const generateFlashcardsFromBatches = async (fullText) => {
     { role: 'system', content: FLASHCARD_MERGE_SYSTEM },
     { role: 'user', content: `Merge, filter, and finalize exactly 10 flashcards from these candidates:\n\n${combined}` },
   ];
-  const raw = await callGroq(messages, 2048, 0.3);
-  return parseFlashcardJSON(raw);
+  const raw = await callGroq(messages, FULL_SET_MAX_TOKENS, 0.3, FLASHCARD_JSON_FORMAT);
+  const merged = ensureExactlyTen(parseFlashcardJSON(raw), 'from the merge step');
+
+  const deduped = dedupeByQuestion(merged);
+  return ensureExactlyTen(deduped, 'after removing duplicate questions');
 };
 
 /**
@@ -427,7 +495,8 @@ const generateFlashcards = async (documentId) => {
 
   // ── 3. Single-pass or batched ────────────────────────────────────────────────
   if (fullText.length <= SINGLE_PASS_LIMIT) {
-    return generateFlashcardsFromText(fullText);
+    const cards = await generateFlashcardsFromText(fullText, FLASHCARD_SYSTEM, FULL_SET_MAX_TOKENS);
+    return ensureExactlyTen(cards, 'from single-pass generation');
   }
   return generateFlashcardsFromBatches(fullText);
 };
