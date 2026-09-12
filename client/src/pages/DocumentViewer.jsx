@@ -18,9 +18,11 @@ import { getDocument } from '../services/documentService.js';
 import { sendChatMessage } from '../services/aiService.js';
 import { createSummary, regenerateSummary } from '../services/summaryService.js';
 import { getFlashcards } from '../services/flashcardService.js';
+import { getQuiz } from '../services/quizService.js';
 import ChatPanel from '../components/ChatPanel.jsx';
 import SummaryPanel from '../components/SummaryPanel.jsx';
 import FlashcardPanel from '../components/FlashcardPanel.jsx';
+import QuizPanel from '../components/QuizPanel.jsx';
 
 const WORKER_URL =
   'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -32,37 +34,6 @@ const TABS = [
   { id: 'flashcards', label: 'Flashcards', icon: FiLayers },
   { id: 'quiz',       label: 'Quiz',       icon: FiCheckSquare },
 ];
-
-const PLACEHOLDERS = {
-  flashcards: {
-    icon: FiLayers,
-    title: 'Flashcard Generator',
-    description: 'Automatically generate flashcards from your document for active recall.',
-  },
-  quiz: {
-    icon: FiCheckSquare,
-    title: 'Quiz Generator',
-    description: 'Create multiple-choice quizzes from your document to test your knowledge.',
-  },
-};
-
-const TabPlaceholder = ({ tabId }) => {
-  const config = PLACEHOLDERS[tabId];
-  if (!config) return null;
-  const Icon = config.icon;
-  return (
-    <div className="viewer-placeholder">
-      <div className="viewer-placeholder-icon">
-        <Icon size={28} />
-      </div>
-      <h3 className="viewer-placeholder-title">{config.title}</h3>
-      <p className="viewer-placeholder-desc">{config.description}</p>
-      <div className="viewer-placeholder-badge">
-        <span>Powered by AI · Coming soon</span>
-      </div>
-    </div>
-  );
-};
 
 const DocumentViewer = () => {
   const { id } = useParams();
@@ -88,6 +59,11 @@ const DocumentViewer = () => {
   const [flashcardSet, setFlashcardSet] = useState(null);
   const [flashcardLoading, setFlashcardLoading] = useState(false);
   const [flashcardError, setFlashcardError] = useState(null);
+
+  // ── Quiz state ───────────────────────────────────────────────────────────────
+  const [quizSet, setQuizSet] = useState(null);
+  const [quizLoading, setQuizLoading] = useState(false);
+  const [quizError, setQuizError] = useState(null);
 
   // ── PDF viewer plugin ─────────────────────────────────────────────────────────
   const defaultLayoutPluginInstance = defaultLayoutPlugin({
@@ -128,13 +104,15 @@ const DocumentViewer = () => {
   useEffect(() => {
     const fetchDocument = async () => {
       try {
-        const [{ data: docData }, { data: fcData }] = await Promise.all([
+        const [{ data: docData }, { data: fcData }, { data: quizData }] = await Promise.all([
           getDocument(id),
           getFlashcards(id).catch(() => ({ data: { flashcardSet: null } })),
+          getQuiz(id).catch(() => ({ data: { quizSet: null } })),
         ]);
         setDocument(docData);
         if (docData.summary) setSummary(docData.summary);
         if (fcData.flashcardSet) setFlashcardSet(fcData.flashcardSet);
+        if (quizData.quizSet) setQuizSet(quizData.quizSet);
       } catch {
         toast.error('Document not found');
         navigate('/documents');
@@ -334,12 +312,19 @@ const DocumentViewer = () => {
           />
         </div>
 
-        {/* Placeholder tab — Quiz */}
+        {/* Quiz — always mounted */}
         <div
-          className="viewer-tab-panel viewer-tab-panel--placeholder"
+          className="viewer-tab-panel viewer-tab-panel--quiz"
           style={{ display: activeTab === 'quiz' ? 'flex' : 'none' }}
         >
-          <TabPlaceholder tabId="quiz" />
+          <QuizPanel
+            documentId={id}
+            quizSet={quizSet}
+            loading={quizLoading}
+            error={quizError}
+            onSetLoaded={setQuizSet}
+            onDismissError={() => setQuizError(null)}
+          />
         </div>
       </div>
     </div>

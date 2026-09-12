@@ -4,6 +4,7 @@ import Document from '../models/Document.js';
 import DocumentChunk from '../models/DocumentChunk.js';
 import FlashcardSet from '../models/FlashcardSet.js';
 import Quiz from '../models/Quiz.js';
+import QuizSet from '../models/QuizSet.js';
 import { extractTextFromPDF } from '../utils/pdfHelper.js';
 import { deleteFile } from '../utils/fileHelper.js';
 import { chunkText } from '../services/chunkService.js';
@@ -132,6 +133,7 @@ const deleteDocument = asyncHandler(async (req, res) => {
     Document.deleteOne({ _id: document._id }),
     DocumentChunk.deleteMany({ documentId: document._id }),
     FlashcardSet.deleteMany({ documentId: document._id }),
+    QuizSet.deleteMany({ documentId: document._id }),
     Quiz.deleteMany({ documentId: document._id }),
   ]);
 

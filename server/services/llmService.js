@@ -2,7 +2,7 @@ import Groq from 'groq-sdk';
 import { retrieveRelevantChunks } from './retrievalService.js';
 import DocumentChunk from '../models/DocumentChunk.js';
 
-const MODEL = 'llama-3.3-70b-versatile';
+const MODEL = 'openai/gpt-oss-120b';
 
 // ─── Shared Groq helper ───────────────────────────────────────────────────────
 const createClient = () => {
@@ -501,5 +501,214 @@ const generateFlashcards = async (documentId) => {
   return generateFlashcardsFromBatches(fullText);
 };
 
-export { chatWithDocument, generateSummary, generateFlashcards };
+// ─── AI Quiz — chunk-based, full-document pipeline ───────────────────────────
+// Mirrors the Flashcard pipeline: same constants, same batching strategy, same
+// JSON-reliability approach. MCQs carry more data per item (4 options + an
+// explanation), so quiz generation gets its own, larger token budget.
+
+const QUIZ_CANDIDATE_MAX_TOKENS = 2048; // small batch of 3–4 candidate questions
+const QUIZ_FULL_SET_MAX_TOKENS = 6144;  // 10 complete MCQs (4 options + explanation each) as JSON
+
+const QUIZ_JSON_FORMAT = { type: 'json_object' };
+
+const QUIZ_SYSTEM = `You are LearnSphere AI, an expert educational quiz generator.
+Generate a multiple-choice quiz that helps students test their understanding of the provided document content.
+
+Rules:
+- Use ONLY information from the document. Do NOT add external knowledge.
+- Generate EXACTLY 10 questions.
+- Each question must have exactly four options.
+- Exactly one option must be the correct answer.
+- Each question must have exactly these fields: "question", "options", "correctAnswer", "explanation", "difficulty".
+- "options" must be an array of exactly 4 strings.
+- "correctAnswer" must be an exact copy of one (and only one) of the 4 strings in "options".
+- "explanation" must briefly justify why the correct answer is correct.
+- difficulty must be one of: "Easy", "Medium", "Hard".
+- Prioritize: definitions, key concepts, important facts, algorithms, formulae, comparisons.
+- Questions must be clear and unambiguous. Avoid trivial or duplicate questions.
+- Return ONLY a valid JSON object with a single key "quiz" whose value is an array of exactly 10 question objects. No explanation outside the JSON. No markdown. No code fences.
+
+Example output format:
+{
+  "quiz": [
+    {
+      "question": "What is the time complexity of binary search on a sorted array?",
+      "options": ["O(n)", "O(log n)", "O(n^2)", "O(1)"],
+      "correctAnswer": "O(log n)",
+      "explanation": "Binary search halves the search space on each comparison, giving logarithmic time complexity.",
+      "difficulty": "Medium"
+    }
+  ]
+}`;
+
+const QUIZ_CANDIDATE_SYSTEM = `You are LearnSphere AI, an expert educational quiz generator.
+Generate multiple-choice questions that help students test their understanding of the provided document content.
+
+Rules:
+- Use ONLY information from the document. Do NOT add external knowledge.
+- Generate 3–4 candidate questions from this specific section of the document.
+- Each question must have exactly four options, with exactly one correct answer.
+- Each question must have exactly these fields: "question", "options", "correctAnswer", "explanation", "difficulty".
+- "options" must be an array of exactly 4 strings.
+- "correctAnswer" must be an exact copy of one (and only one) of the 4 strings in "options".
+- difficulty must be one of: "Easy", "Medium", "Hard".
+- Questions must be clear and unambiguous. Avoid trivial or duplicate questions.
+- Return ONLY a valid JSON object with a single key "quiz" whose value is an array of the candidate question objects. No explanation. No markdown. No code fences.`;
+
+const QUIZ_MERGE_SYSTEM = `You are LearnSphere AI.
+You will receive several batches of candidate multiple-choice questions (as a JSON array) generated from different sections of the same document.
+Merge them into one final quiz.
+
+Rules:
+- Remove duplicate or near-identical questions.
+- Keep the highest-quality, clearest questions.
+- Ensure coverage of different document sections.
+- Each question must keep exactly four options with exactly one correct answer.
+- Return EXACTLY 10 questions.
+- Return ONLY a valid JSON object with a single key "quiz" whose value is an array of exactly 10 question objects, each with "question", "options", "correctAnswer", "explanation", and "difficulty".
+- No explanation. No markdown. No code fences.`;
+
+/**
+ * Parses the LLM's text output into a quiz question array.
+ * Accepts either a bare JSON array or the preferred {"quiz": [...]} object
+ * shape, and strips markdown code fences if the model adds them despite JSON
+ * mode being requested.
+ *
+ * @param {string} text - Raw LLM response.
+ * @returns {Array}     - Parsed array of question objects.
+ */
+const parseQuizJSON = (text) => {
+  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  const parsed = JSON.parse(cleaned);
+
+  const questions = Array.isArray(parsed) ? parsed : parsed?.quiz;
+  if (!Array.isArray(questions)) {
+    throw new Error('LLM response did not contain a quiz array.');
+  }
+  return questions;
+};
+
+/**
+ * Structural validation for a single quiz question: required fields present,
+ * exactly 4 non-empty options, and correctAnswer matching exactly one option.
+ *
+ * @param {*} q - Candidate question object.
+ * @returns {boolean}
+ */
+const isValidQuizQuestion = (q) => {
+  if (!q || typeof q !== 'object') return false;
+  if (typeof q.question !== 'string' || q.question.trim().length === 0) return false;
+  if (!Array.isArray(q.options) || q.options.length !== 4) return false;
+  if (q.options.some((opt) => typeof opt !== 'string' || opt.trim().length === 0)) return false;
+  if (typeof q.correctAnswer !== 'string') return false;
+  const matchCount = q.options.filter((opt) => opt === q.correctAnswer).length;
+  if (matchCount !== 1) return false;
+  if (typeof q.explanation !== 'string' || q.explanation.trim().length === 0) return false;
+  if (!['Easy', 'Medium', 'Hard'].includes(q.difficulty)) return false;
+  return true;
+};
+
+/**
+ * Throws if `questions` is not an array of exactly 10 structurally valid
+ * questions. Used at every point where the pipeline is expected to produce
+ * the final quiz, so a non-compliant LLM response fails loudly instead of
+ * being saved as-is.
+ *
+ * @param {Array}  questions - Parsed question array to check.
+ * @param {string} stage     - Human-readable pipeline stage, for the error message.
+ * @returns {Array} The same array, for chaining.
+ */
+const ensureValidQuiz = (questions, stage) => {
+  if (!Array.isArray(questions) || questions.length !== 10) {
+    const count = Array.isArray(questions) ? questions.length : 'a non-array result';
+    throw new Error(`Quiz generation failed: expected exactly 10 questions ${stage}, but got ${count}.`);
+  }
+  const invalidIndex = questions.findIndex((q) => !isValidQuizQuestion(q));
+  if (invalidIndex !== -1) {
+    throw new Error(
+      `Quiz generation failed: question ${invalidIndex + 1} ${stage} is missing required fields, ` +
+      `does not have exactly 4 options, or its correctAnswer does not match exactly one option.`
+    );
+  }
+  return questions;
+};
+
+/**
+ * Generates quiz questions from a single text batch and returns a parsed array.
+ */
+const generateQuizFromText = async (text, systemPrompt = QUIZ_SYSTEM, maxTokens = QUIZ_CANDIDATE_MAX_TOKENS) => {
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: `Generate a multiple-choice quiz from this document content:\n\n${text}` },
+  ];
+  const raw = await callGroq(messages, maxTokens, 0.4, QUIZ_JSON_FORMAT);
+  return parseQuizJSON(raw);
+};
+
+/**
+ * Generates a quiz from a long document by batching candidate questions then merging.
+ */
+const generateQuizFromBatches = async (fullText) => {
+  const batches = [];
+  for (let i = 0; i < fullText.length; i += BATCH_SIZE) {
+    batches.push(fullText.slice(i, i + BATCH_SIZE));
+  }
+
+  const allQuestions = [];
+  for (let i = 0; i < batches.length; i++) {
+    // eslint-disable-next-line no-await-in-loop
+    const questions = await generateQuizFromText(batches[i], QUIZ_CANDIDATE_SYSTEM, QUIZ_CANDIDATE_MAX_TOKENS);
+    allQuestions.push(...questions);
+  }
+
+  // Merge via a consolidation call to deduplicate and select the final 10
+  const combined = JSON.stringify(allQuestions, null, 2);
+  const messages = [
+    { role: 'system', content: QUIZ_MERGE_SYSTEM },
+    { role: 'user', content: `Merge, filter, and finalize exactly 10 quiz questions from these candidates:\n\n${combined}` },
+  ];
+  const raw = await callGroq(messages, QUIZ_FULL_SET_MAX_TOKENS, 0.3, QUIZ_JSON_FORMAT);
+  const merged = ensureValidQuiz(parseQuizJSON(raw), 'from the merge step');
+
+  // dedupeByQuestion is generic over any array of objects with a `.question`
+  // field, so the same helper used for Flashcards applies here unchanged.
+  const deduped = dedupeByQuestion(merged);
+  return ensureValidQuiz(deduped, 'after removing duplicate questions');
+};
+
+/**
+ * Generates a 10-question multiple-choice quiz covering the entire document.
+ *
+ * Pipeline:
+ *   1. Load all DocumentChunks from MongoDB (sorted by chunkIndex).
+ *   2. Concatenate to get full document text.
+ *   3. If text ≤ SINGLE_PASS_LIMIT → one Groq call.
+ *      If text  > SINGLE_PASS_LIMIT → batch + merge.
+ *   4. Return a validated array of exactly 10 question objects.
+ *
+ * @param {string} documentId - MongoDB Document _id.
+ * @returns {Promise<Array>}  - Array of {question, options, correctAnswer, explanation, difficulty}.
+ */
+const generateQuiz = async (documentId) => {
+  // ── 1. Load all chunks in order ──────────────────────────────────────────────
+  const chunks = await DocumentChunk.find({ documentId })
+    .sort({ chunkIndex: 1 })
+    .select('text -_id');
+
+  if (!chunks || chunks.length === 0) {
+    throw new Error('No document chunks found. The document may not have been processed yet.');
+  }
+
+  // ── 2. Concatenate into full text ────────────────────────────────────────────
+  const fullText = chunks.map((c) => c.text).join('\n\n');
+
+  // ── 3. Single-pass or batched ────────────────────────────────────────────────
+  if (fullText.length <= SINGLE_PASS_LIMIT) {
+    const questions = await generateQuizFromText(fullText, QUIZ_SYSTEM, QUIZ_FULL_SET_MAX_TOKENS);
+    return ensureValidQuiz(questions, 'from single-pass generation');
+  }
+  return generateQuizFromBatches(fullText);
+};
+
+export { chatWithDocument, generateSummary, generateFlashcards, generateQuiz };
 
