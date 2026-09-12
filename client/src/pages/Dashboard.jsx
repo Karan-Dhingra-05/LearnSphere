@@ -10,6 +10,8 @@ import {
   FiUpload,
   FiClock,
   FiArrowRight,
+  FiCheckSquare,
+  FiHeart,
 } from 'react-icons/fi';
 import useAuth from '../hooks/useAuth.js';
 import { getDashboardStats } from '../services/dashboardService.js';
@@ -66,6 +68,20 @@ const Dashboard = () => {
       label: 'Average Score',
       gradient: 'linear-gradient(135deg, #F59E0B, #D97706)',
       delay: 0.25,
+    },
+    {
+      icon: FiCheckSquare,
+      value: stats?.reviewedFlashcards ?? '—',
+      label: 'Flashcards Reviewed',
+      gradient: 'linear-gradient(135deg, #06B6D4, #0891B2)',
+      delay: 0.3,
+    },
+    {
+      icon: FiHeart,
+      value: stats?.favoriteFlashcards ?? '—',
+      label: 'Favorites',
+      gradient: 'linear-gradient(135deg, #EC4899, #DB2777)',
+      delay: 0.35,
     },
   ];
 

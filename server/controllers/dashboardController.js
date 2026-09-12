@@ -9,10 +9,10 @@ import Quiz from '../models/Quiz.js';
 const getDashboard = asyncHandler(async (req, res) => {
   const userId = req.user._id;
 
-  const [totalDocuments, totalFlashcardSets, totalQuizzes, recentDocuments, quizzes] =
+  const [totalDocuments, flashcardSets, totalQuizzes, recentDocuments, quizzes] =
     await Promise.all([
       Document.countDocuments({ userId }),
-      FlashcardSet.countDocuments({ userId }),
+      FlashcardSet.find({ userId }).select('flashcards'),
       Quiz.countDocuments({ userId }),
       Document.find({ userId })
         .select('-extractedText')
@@ -31,12 +31,20 @@ const getDashboard = asyncHandler(async (req, res) => {
         )
       : 0;
 
+  // Reviewed/favorite are simple booleans on each flashcard — sum them
+  // across every set the user owns for a global snapshot count.
+  const allFlashcards = flashcardSets.flatMap((set) => set.flashcards);
+  const reviewedFlashcards = allFlashcards.filter((c) => c.reviewed).length;
+  const favoriteFlashcards = allFlashcards.filter((c) => c.favorite).length;
+
   res.json({
     stats: {
       totalDocuments,
-      totalFlashcardSets,
+      totalFlashcardSets: flashcardSets.length,
       totalQuizzes,
       avgScore,
+      reviewedFlashcards,
+      favoriteFlashcards,
     },
     recentDocuments,
   });
