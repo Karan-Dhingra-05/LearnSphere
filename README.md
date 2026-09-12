@@ -36,21 +36,15 @@ Upload PDFs and use Retrieval-Augmented Generation to chat with your content, ge
 - 🧠 Local text embeddings using `all-MiniLM-L6-v2` (384 dimensions)
 - ⚡ FAISS vector search for fast, accurate chunk retrieval
 - 📝 AI-generated document summaries with server-side caching
+- 🃏 AI-generated flashcards with favorites and reviewed tracking
+- 📝 AI-generated multiple-choice quizzes with server-side scoring and retake/regenerate support
 
 ### 🎨 User Experience
 - 📊 Dashboard with statistics and recent documents
+- 📈 Per-document learning progress (flashcard review status, quiz scores and attempt history)
 - 🗃️ Responsive sidebar navigation
 - ✨ Smooth animations with Framer Motion
 - 🌙 Clean, custom CSS design system
-
----
-
-## Ongoing Development
-
-- 🃏 Flashcard Generation
-- 📝 Quiz Generation
-- 📊 Learning Analytics & Progress Tracking
-- ⭐ Favorites
 
 ---
 
@@ -64,7 +58,7 @@ Upload PDFs and use Retrieval-Augmented Generation to chat with your content, ge
 | Database        | MongoDB, Mongoose                                |
 | Vector Store    | FAISS (`faiss-node`)                             |
 | Embeddings      | `@huggingface/transformers` (all-MiniLM-L6-v2)  |
-| LLM Provider    | Groq API (llama-3.3-70b-versatile)               |
+| LLM Provider    | Groq API (openai/gpt-oss-120b)                   |
 | Authentication  | JWT (HTTP-only cookies), bcryptjs                |
 | File Uploads    | Multer                                           |
 | PDF Parsing     | pdf-parse                                        |
@@ -227,10 +221,35 @@ The app will be available at `http://localhost:5173`.
 | POST   | `/:documentId`            | Generate and cache a summary               |
 | POST   | `/:documentId/regenerate` | Force-regenerate an existing summary       |
 
+### Flashcards — `/api/flashcards`
+
+| Method | Endpoint                              | Description                                                  |
+|--------|-----------------------------------------|---------------------------------------------------------------|
+| GET    | `/:documentId`                        | Return the cached flashcard set (or `null`)                    |
+| POST   | `/:documentId`                        | Generate and cache a flashcard set                             |
+| POST   | `/:documentId/regenerate`             | Force-regenerate the flashcard set                             |
+| PATCH  | `/:documentId/cards/:cardId/favorite` | Toggle favorite on a single flashcard                          |
+| PATCH  | `/:documentId/cards/:cardId/reviewed` | Mark a single flashcard as reviewed                            |
+
+### Quiz — `/api/quiz`
+
+| Method | Endpoint                  | Description                                                              |
+|--------|----------------------------|----------------------------------------------------------------------------|
+| GET    | `/:documentId`             | Return the cached quiz set (or `null`)                                    |
+| POST   | `/:documentId`             | Generate and cache a quiz set                                             |
+| POST   | `/:documentId/regenerate`  | Force-regenerate the quiz set (past attempts are preserved)               |
+| POST   | `/:documentId/submit`      | Submit answers; score is computed server-side and an attempt is recorded |
+
+### Progress — `/api/progress`
+
+| Method | Endpoint | Description                                                          |
+|--------|----------|--------------------------------------------------------------------------|
+| GET    | `/`      | Return per-document flashcard and quiz progress for the current user |
+
 ### Dashboard — `/api/dashboard`
 
 | Method | Endpoint | Description                                                    |
 |--------|----------|----------------------------------------------------------------|
-| GET    | `/`      | Return stats (documents, flashcard sets, quizzes) and recent documents |
+| GET    | `/`      | Return stats (documents, flashcard sets, quiz attempts, flashcards reviewed/favorited) and recent documents |
 
 ---

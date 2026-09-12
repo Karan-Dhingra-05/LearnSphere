@@ -1,5 +1,4 @@
 import { motion } from 'framer-motion';
-import { FiUser } from 'react-icons/fi';
 import useAuth from '../hooks/useAuth.js';
 import { formatDate } from '../utils/formatters.js';
 

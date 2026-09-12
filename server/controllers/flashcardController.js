@@ -1,7 +1,7 @@
 import asyncHandler from 'express-async-handler';
 import Document from '../models/Document.js';
 import FlashcardSet from '../models/FlashcardSet.js';
-import { generateFlashcards } from '../services/llmService.js';
+import { generateFlashcards, parseLLMError } from '../services/llmService.js';
 
 // @desc    Get the cached flashcard set for a document (or null)
 // @route   GET /api/flashcards/:documentId
@@ -41,12 +41,22 @@ const createFlashcards = asyncHandler(async (req, res) => {
   try {
     const cards = await generateFlashcards(documentId);
 
-    const set = await FlashcardSet.create({
-      userId: req.user._id,
-      documentId,
-      title: document.title,
-      flashcards: cards,
-    });
+    let set;
+    try {
+      set = await FlashcardSet.create({
+        userId: req.user._id,
+        documentId,
+        title: document.title,
+        flashcards: cards,
+      });
+    } catch (createErr) {
+      if (createErr.code === 11000) {
+        // A concurrent request won the race and already created the set.
+        set = await FlashcardSet.findOne({ documentId, userId: req.user._id });
+        return res.json({ flashcardSet: set, cached: true });
+      }
+      throw createErr;
+    }
 
     res.status(201).json({ flashcardSet: set, cached: false });
   } catch (err) {
@@ -61,7 +71,8 @@ const createFlashcards = asyncHandler(async (req, res) => {
         message: 'The AI returned an unexpected format. Please try again.',
       });
     }
-    res.status(500).json({ message: 'Failed to generate flashcards. Please try again.' });
+    const { status, message } = parseLLMError(err);
+    res.status(status).json({ message });
   }
 });
 
@@ -83,12 +94,22 @@ const regenerateFlashcards = asyncHandler(async (req, res) => {
   try {
     const cards = await generateFlashcards(documentId);
 
-    const set = await FlashcardSet.create({
-      userId: req.user._id,
-      documentId,
-      title: document.title,
-      flashcards: cards,
-    });
+    let set;
+    try {
+      set = await FlashcardSet.create({
+        userId: req.user._id,
+        documentId,
+        title: document.title,
+        flashcards: cards,
+      });
+    } catch (createErr) {
+      if (createErr.code === 11000) {
+        // A concurrent regenerate/create request already recreated the set.
+        set = await FlashcardSet.findOne({ documentId, userId: req.user._id });
+        return res.json({ flashcardSet: set, cached: true });
+      }
+      throw createErr;
+    }
 
     res.status(201).json({ flashcardSet: set, cached: false });
   } catch (err) {
@@ -103,7 +124,8 @@ const regenerateFlashcards = asyncHandler(async (req, res) => {
         message: 'The AI returned an unexpected format. Please try again.',
       });
     }
-    res.status(500).json({ message: 'Failed to regenerate flashcards. Please try again.' });
+    const { status, message } = parseLLMError(err);
+    res.status(status).json({ message });
   }
 });
 

@@ -1,23 +1,6 @@
 import asyncHandler from 'express-async-handler';
 import Document from '../models/Document.js';
-import { generateSummary } from '../services/llmService.js';
-
-const parseLLMError = (err) => {
-  const msg = err?.message || '';
-  if (msg.includes('429') || msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('quota')) {
-    return { status: 429, message: 'The AI service is temporarily busy. Please wait a moment and try again.' };
-  }
-  if (msg.includes('401') || msg.includes('GROQ_API_KEY') || msg.toLowerCase().includes('api key')) {
-    return { status: 503, message: 'The AI service is not configured correctly. Please contact support.' };
-  }
-  if (msg.includes('503') || msg.toLowerCase().includes('unavailable')) {
-    return { status: 503, message: 'The AI service is temporarily unavailable. Please try again shortly.' };
-  }
-  if (msg.includes('empty response')) {
-    return { status: 502, message: 'The AI returned an empty response. Please try again.' };
-  }
-  return { status: 500, message: 'An error occurred while generating the summary. Please try again.' };
-};
+import { generateSummary, parseLLMError } from '../services/llmService.js';
 
 // @desc    Get the cached summary for a document (or null if not yet generated)
 // @route   GET /api/summary/:documentId

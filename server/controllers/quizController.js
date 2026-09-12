@@ -2,7 +2,7 @@ import asyncHandler from 'express-async-handler';
 import Document from '../models/Document.js';
 import QuizSet from '../models/QuizSet.js';
 import Quiz from '../models/Quiz.js';
-import { generateQuiz } from '../services/llmService.js';
+import { generateQuiz, parseLLMError } from '../services/llmService.js';
 
 // @desc    Get the cached quiz set for a document (or null)
 // @route   GET /api/quiz/:documentId
@@ -42,12 +42,22 @@ const createQuiz = asyncHandler(async (req, res) => {
   try {
     const questions = await generateQuiz(documentId);
 
-    const quizSet = await QuizSet.create({
-      userId: req.user._id,
-      documentId,
-      title: document.title,
-      questions,
-    });
+    let quizSet;
+    try {
+      quizSet = await QuizSet.create({
+        userId: req.user._id,
+        documentId,
+        title: document.title,
+        questions,
+      });
+    } catch (createErr) {
+      if (createErr.code === 11000) {
+        // A concurrent request won the race and already created the set.
+        quizSet = await QuizSet.findOne({ documentId, userId: req.user._id });
+        return res.json({ quizSet, cached: true });
+      }
+      throw createErr;
+    }
 
     res.status(201).json({ quizSet, cached: false });
   } catch (err) {
@@ -62,7 +72,8 @@ const createQuiz = asyncHandler(async (req, res) => {
         message: 'The AI returned an unexpected format. Please try again.',
       });
     }
-    res.status(500).json({ message: 'Failed to generate quiz. Please try again.' });
+    const { status, message } = parseLLMError(err);
+    res.status(status).json({ message });
   }
 });
 
@@ -85,12 +96,22 @@ const regenerateQuiz = asyncHandler(async (req, res) => {
   try {
     const questions = await generateQuiz(documentId);
 
-    const quizSet = await QuizSet.create({
-      userId: req.user._id,
-      documentId,
-      title: document.title,
-      questions,
-    });
+    let quizSet;
+    try {
+      quizSet = await QuizSet.create({
+        userId: req.user._id,
+        documentId,
+        title: document.title,
+        questions,
+      });
+    } catch (createErr) {
+      if (createErr.code === 11000) {
+        // A concurrent regenerate/create request already recreated the set.
+        quizSet = await QuizSet.findOne({ documentId, userId: req.user._id });
+        return res.json({ quizSet, cached: true });
+      }
+      throw createErr;
+    }
 
     res.status(201).json({ quizSet, cached: false });
   } catch (err) {
@@ -105,7 +126,8 @@ const regenerateQuiz = asyncHandler(async (req, res) => {
         message: 'The AI returned an unexpected format. Please try again.',
       });
     }
-    res.status(500).json({ message: 'Failed to regenerate quiz. Please try again.' });
+    const { status, message } = parseLLMError(err);
+    res.status(status).json({ message });
   }
 });
 

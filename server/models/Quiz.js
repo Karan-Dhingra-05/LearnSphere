@@ -32,5 +32,9 @@ const quizSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Speeds up per-document attempt lookups (progress/dashboard); not unique —
+// multiple attempts per document per user are expected.
+quizSchema.index({ documentId: 1, userId: 1 });
+
 const Quiz = mongoose.model('Quiz', quizSchema);
 export default Quiz;

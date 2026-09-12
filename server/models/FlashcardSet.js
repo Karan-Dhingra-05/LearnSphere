@@ -30,5 +30,8 @@ const flashcardSetSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// One cached flashcard set per document per user.
+flashcardSetSchema.index({ documentId: 1, userId: 1 }, { unique: true });
+
 const FlashcardSet = mongoose.model('FlashcardSet', flashcardSetSchema);
 export default FlashcardSet;

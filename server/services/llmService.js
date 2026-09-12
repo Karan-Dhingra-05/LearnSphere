@@ -31,6 +31,35 @@ const callGroq = async (messages, maxTokens = 2048, temperature = 0.4, responseF
   return text;
 };
 
+// ─── Shared error mapping ─────────────────────────────────────────────────────
+// Converts raw LLM/network errors into a safe, user-friendly message + HTTP
+// status. Shared by Chat, Summary, Flashcards, and Quiz controllers so all
+// four give consistent, specific feedback for rate limits, auth/config
+// issues, outages, and timeouts instead of a single generic message.
+const parseLLMError = (err) => {
+  const msg = err?.message || '';
+  const status = err?.status || err?.statusCode;
+
+  if (status === 429 || msg.includes('429') || msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('quota')) {
+    const retryMatch = msg.match(/retry after (\d+)/i) || msg.match(/in (\d+)s/i);
+    const wait = retryMatch ? ` Please try again in ${retryMatch[1]} seconds.` : ' Please wait a moment and try again.';
+    return { status: 429, message: `The AI service is temporarily busy.${wait}` };
+  }
+  if (status === 401 || msg.includes('401') || msg.includes('GROQ_API_KEY') || msg.toLowerCase().includes('api key') || msg.toLowerCase().includes('unauthorized')) {
+    return { status: 503, message: 'The AI service is not configured correctly. Please contact support.' };
+  }
+  if (status === 503 || msg.includes('503') || msg.toLowerCase().includes('unavailable') || msg.toLowerCase().includes('overloaded')) {
+    return { status: 503, message: 'The AI service is temporarily unavailable. Please try again shortly.' };
+  }
+  if (msg.toLowerCase().includes('timeout') || msg.toLowerCase().includes('network') || msg.toLowerCase().includes('econnrefused')) {
+    return { status: 503, message: 'Could not reach the AI service. Please check your connection and try again.' };
+  }
+  if (msg.includes('empty response')) {
+    return { status: 502, message: 'The AI returned an empty response. Please try again.' };
+  }
+  return { status: 500, message: 'An error occurred while processing your request. Please try again.' };
+};
+
 // ─── AI Chat — RAG-powered ────────────────────────────────────────────────────
 
 const CHAT_SYSTEM = `You are LearnSphere AI, an expert educational assistant that helps students deeply understand their documents.
@@ -710,5 +739,5 @@ const generateQuiz = async (documentId) => {
   return generateQuizFromBatches(fullText);
 };
 
-export { chatWithDocument, generateSummary, generateFlashcards, generateQuiz };
+export { chatWithDocument, generateSummary, generateFlashcards, generateQuiz, parseLLMError };
 

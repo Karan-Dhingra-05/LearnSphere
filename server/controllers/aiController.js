@@ -1,34 +1,6 @@
 import asyncHandler from 'express-async-handler';
 import Document from '../models/Document.js';
-import { chatWithDocument } from '../services/llmService.js';
-
-/**
- * Converts raw LLM / network errors into user-friendly messages.
- * The original error is logged server-side; raw details are never sent to the client.
- */
-const parseLLMError = (err) => {
-  const msg = err?.message || '';
-  const status = err?.status || err?.statusCode;
-
-  if (status === 429 || msg.includes('429') || msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('quota')) {
-    const retryMatch = msg.match(/retry after (\d+)/i) || msg.match(/in (\d+)s/i);
-    const wait = retryMatch ? ` Please try again in ${retryMatch[1]} seconds.` : ' Please wait a moment and try again.';
-    return { status: 429, message: `The AI service is temporarily busy.${wait}` };
-  }
-  if (status === 401 || msg.includes('401') || msg.includes('GROQ_API_KEY') || msg.toLowerCase().includes('api key') || msg.toLowerCase().includes('unauthorized')) {
-    return { status: 503, message: 'The AI service is not configured correctly. Please contact support.' };
-  }
-  if (status === 503 || msg.includes('503') || msg.toLowerCase().includes('unavailable') || msg.toLowerCase().includes('overloaded')) {
-    return { status: 503, message: 'The AI service is temporarily unavailable. Please try again shortly.' };
-  }
-  if (msg.toLowerCase().includes('timeout') || msg.toLowerCase().includes('network') || msg.toLowerCase().includes('econnrefused')) {
-    return { status: 503, message: 'Could not reach the AI service. Please check your connection and try again.' };
-  }
-  if (msg.includes('empty response')) {
-    return { status: 502, message: 'The AI returned an empty response. Please try rephrasing your question.' };
-  }
-  return { status: 500, message: 'An error occurred while processing your request. Please try again.' };
-};
+import { chatWithDocument, parseLLMError } from '../services/llmService.js';
 
 // @desc    Send a chat message for a given document and receive an AI response
 // @route   POST /api/ai/chat

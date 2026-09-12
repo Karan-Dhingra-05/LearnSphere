@@ -38,6 +38,9 @@ const QuizPanel = ({ documentId, quizSet, loading, error, onSetLoaded, onDismiss
 
   // Reset local "taking" state whenever a different quiz set is loaded
   // (first generation or a regenerate) so a stale attempt never carries over.
+  // Intentionally keyed only on quizSet._id — that's the identity signal for
+  // "a new set loaded"; questions.length changes for the same reason, so
+  // depending on both would be redundant.
   useEffect(() => {
     setCurrentIndex(0);
     setAnswers(new Array(quizSet?.questions?.length || 0).fill(null));

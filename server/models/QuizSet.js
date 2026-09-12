@@ -30,5 +30,8 @@ const quizSetSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// One cached quiz set per document per user.
+quizSetSchema.index({ documentId: 1, userId: 1 }, { unique: true });
+
 const QuizSet = mongoose.model('QuizSet', quizSetSchema);
 export default QuizSet;

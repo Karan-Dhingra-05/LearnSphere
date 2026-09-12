@@ -14,6 +14,7 @@ import {
   FiCheckSquare,
   FiArrowLeft,
 } from 'react-icons/fi';
+import { API_ORIGIN } from '../services/api.js';
 import { getDocument } from '../services/documentService.js';
 import { sendChatMessage } from '../services/aiService.js';
 import { createSummary, regenerateSummary } from '../services/summaryService.js';
@@ -57,12 +58,16 @@ const DocumentViewer = () => {
 
   // ── Flashcard state ──────────────────────────────────────────────────────────
   const [flashcardSet, setFlashcardSet] = useState(null);
-  const [flashcardLoading, setFlashcardLoading] = useState(false);
+  // FlashcardPanel manages its own "generating" loading state internally;
+  // this is only ever read (always false), never set.
+  const [flashcardLoading] = useState(false);
   const [flashcardError, setFlashcardError] = useState(null);
 
   // ── Quiz state ───────────────────────────────────────────────────────────────
   const [quizSet, setQuizSet] = useState(null);
-  const [quizLoading, setQuizLoading] = useState(false);
+  // QuizPanel manages its own "generating" loading state internally;
+  // this is only ever read (always false), never set.
+  const [quizLoading] = useState(false);
   const [quizError, setQuizError] = useState(null);
 
   // ── PDF viewer plugin ─────────────────────────────────────────────────────────
@@ -139,6 +144,7 @@ const DocumentViewer = () => {
     try {
       const historyForApi = updatedMessages
         .slice(0, -1)
+        .slice(-12)
         .map(({ role, content }) => ({ role, content }));
 
       const { data } = await sendChatMessage(id, trimmed, historyForApi);
@@ -197,7 +203,7 @@ const DocumentViewer = () => {
 
   // ── Render ────────────────────────────────────────────────────────────────────
   const pdfUrl = document
-    ? `${import.meta.env.VITE_API_URL.replace('/api', '')}/uploads/${document.pdfPath}`
+    ? `${API_ORIGIN}/uploads/${document.pdfPath}`
     : null;
 
   if (docLoading) {
