@@ -1,27 +1,29 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { FiFileText, FiUpload } from 'react-icons/fi';
 import { getDocuments } from '../services/documentService.js';
 import DocumentCard from '../components/DocumentCard.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import UploadModal from '../components/UploadModal.jsx';
 
 const Documents = () => {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+
+  const fetchDocuments = async () => {
+    try {
+      const { data } = await getDocuments();
+      setDocuments(data);
+    } catch {
+      toast.error('Failed to load documents');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchDocuments = async () => {
-      try {
-        const { data } = await getDocuments();
-        setDocuments(data);
-      } catch {
-        toast.error('Failed to load documents');
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchDocuments();
   }, []);
 
@@ -46,10 +48,10 @@ const Documents = () => {
               : 'No documents yet'}
           </p>
         </div>
-        <Link to="/upload" className="btn-primary-action">
+        <button className="btn-primary-action" onClick={() => setShowUploadModal(true)}>
           <FiUpload size={15} />
           Upload PDF
-        </Link>
+        </button>
       </motion.div>
 
       {/* Content */}
@@ -65,10 +67,10 @@ const Documents = () => {
           title="No documents uploaded"
           description="Upload a PDF to start learning. AI-powered tools like chat, summaries, flashcards, and quizzes will be available on each document."
           action={
-            <Link to="/upload" className="btn-primary-sm">
+            <button className="btn-primary-sm" onClick={() => setShowUploadModal(true)}>
               <FiUpload size={14} />
               Upload your first PDF
-            </Link>
+            </button>
           }
         />
       ) : (
@@ -83,6 +85,12 @@ const Documents = () => {
           ))}
         </div>
       )}
+
+      <UploadModal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onUploaded={fetchDocuments}
+      />
     </div>
   );
 };

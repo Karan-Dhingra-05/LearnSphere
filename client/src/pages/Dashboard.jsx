@@ -17,6 +17,7 @@ import useAuth from '../hooks/useAuth.js';
 import { getDashboardStats } from '../services/dashboardService.js';
 import StatCard from '../components/StatCard.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import UploadModal from '../components/UploadModal.jsx';
 import { formatFileSize, formatDate, getGreeting } from '../utils/formatters.js';
 
 const Dashboard = () => {
@@ -24,19 +25,21 @@ const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [recentDocuments, setRecentDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+
+  const fetchDashboard = async () => {
+    try {
+      const { data } = await getDashboardStats();
+      setStats(data.stats);
+      setRecentDocuments(data.recentDocuments);
+    } catch {
+      toast.error('Failed to load dashboard');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchDashboard = async () => {
-      try {
-        const { data } = await getDashboardStats();
-        setStats(data.stats);
-        setRecentDocuments(data.recentDocuments);
-      } catch {
-        toast.error('Failed to load dashboard');
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchDashboard();
   }, []);
 
@@ -101,10 +104,10 @@ const Dashboard = () => {
           <p className="hero-sub">
             Your AI-powered learning assistant is ready. Upload a PDF to get started.
           </p>
-          <Link to="/upload" className="hero-cta">
+          <button className="hero-cta" onClick={() => setShowUploadModal(true)}>
             <FiUpload size={15} />
             Upload a PDF
-          </Link>
+          </button>
         </div>
         <div className="hero-banner-decoration" aria-hidden="true">
           <div className="hero-circle hero-circle--1" />
@@ -144,9 +147,9 @@ const Dashboard = () => {
             title="No documents yet"
             description="Upload your first PDF to start learning with AI assistance."
             action={
-              <Link to="/upload" className="btn-primary-sm">
+              <button className="btn-primary-sm" onClick={() => setShowUploadModal(true)}>
                 Upload PDF
-              </Link>
+              </button>
             }
           />
         ) : (
@@ -183,6 +186,12 @@ const Dashboard = () => {
           </div>
         )}
       </section>
+
+      <UploadModal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onUploaded={fetchDashboard}
+      />
     </div>
   );
 };

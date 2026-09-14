@@ -3,19 +3,16 @@ import toast from 'react-hot-toast';
 import {
   FiGrid,
   FiFileText,
-  FiUpload,
   FiBarChart2,
   FiHeart,
   FiUser,
   FiLogOut,
-  FiSun,
 } from 'react-icons/fi';
 import useAuth from '../hooks/useAuth.js';
 
 const NAV_ITEMS = [
   { path: '/dashboard', icon: FiGrid, label: 'Dashboard' },
   { path: '/documents', icon: FiFileText, label: 'Documents' },
-  { path: '/upload', icon: FiUpload, label: 'Upload' },
   { path: '/progress', icon: FiBarChart2, label: 'Progress' },
   { path: '/favorites', icon: FiHeart, label: 'Favorites' },
   { path: '/profile', icon: FiUser, label: 'Profile' },
@@ -80,11 +77,6 @@ const Sidebar = ({ isOpen, onClose }) => {
 
       {/* Bottom section */}
       <div className="sidebar-bottom">
-        <button className="sidebar-theme-btn">
-          <FiSun />
-          <span>Light Mode</span>
-        </button>
-
         <div className="sidebar-user-card">
           <div className="sidebar-avatar">{getInitials(user?.name)}</div>
           <div className="sidebar-user-info">

@@ -13,6 +13,7 @@ import summaryRoutes from './routes/summaryRoutes.js';
 import flashcardRoutes from './routes/flashcardRoutes.js';
 import quizRoutes from './routes/quizRoutes.js';
 import progressRoutes from './routes/progressRoutes.js';
+import favoritesRoutes from './routes/favoritesRoutes.js';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 import { initializeRAG } from './services/retrievalService.js';
 
@@ -48,6 +49,7 @@ app.use('/api/summary', summaryRoutes);
 app.use('/api/flashcards', flashcardRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/progress', progressRoutes);
+app.use('/api/favorites', favoritesRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

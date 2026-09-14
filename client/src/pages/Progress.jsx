@@ -5,26 +5,29 @@ import toast from 'react-hot-toast';
 import { FiBarChart2, FiFileText, FiLayers, FiCheckSquare, FiAlertCircle } from 'react-icons/fi';
 import { getProgress } from '../services/progressService.js';
 import EmptyState from '../components/EmptyState.jsx';
+import UploadModal from '../components/UploadModal.jsx';
 import { formatDate } from '../utils/formatters.js';
 
 const Progress = () => {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+
+  const fetchProgress = async () => {
+    try {
+      const { data } = await getProgress();
+      setDocuments(data.documents);
+    } catch (err) {
+      const message = err?.response?.data?.message || 'Failed to load progress.';
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchProgress = async () => {
-      try {
-        const { data } = await getProgress();
-        setDocuments(data.documents);
-      } catch (err) {
-        const message = err?.response?.data?.message || 'Failed to load progress.';
-        setError(message);
-        toast.error(message);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchProgress();
   }, []);
 
@@ -61,9 +64,9 @@ const Progress = () => {
           title="No documents yet"
           description="Upload a PDF and generate flashcards or a quiz to start tracking your progress."
           action={
-            <Link to="/upload" className="btn-primary-sm">
+            <button className="btn-primary-sm" onClick={() => setShowUploadModal(true)}>
               Upload PDF
-            </Link>
+            </button>
           }
         />
       ) : (
@@ -131,6 +134,12 @@ const Progress = () => {
           ))}
         </div>
       )}
+
+      <UploadModal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onUploaded={fetchProgress}
+      />
     </div>
   );
 };

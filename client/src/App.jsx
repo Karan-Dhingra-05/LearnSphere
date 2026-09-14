@@ -8,7 +8,6 @@ import LoginPage from './pages/LoginPage.jsx';
 import SignupPage from './pages/SignupPage.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Documents from './pages/Documents.jsx';
-import Upload from './pages/Upload.jsx';
 import DocumentViewer from './pages/DocumentViewer.jsx';
 import Progress from './pages/Progress.jsx';
 import Favorites from './pages/Favorites.jsx';
@@ -35,7 +34,6 @@ const App = () => (
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="documents" element={<Documents />} />
-            <Route path="upload" element={<Upload />} />
             <Route path="viewer/:id" element={<DocumentViewer />} />
             <Route path="progress" element={<Progress />} />
             <Route path="favorites" element={<Favorites />} />
@@ -50,9 +48,9 @@ const App = () => (
         toastOptions={{
           duration: 4000,
           style: {
-            background: '#fff',
-            color: '#0F172A',
-            border: '1px solid #E2E8F0',
+            background: 'var(--color-card)',
+            color: 'var(--color-text)',
+            border: '1px solid var(--color-border)',
             borderRadius: '12px',
             boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
             fontSize: '14px',

@@ -53,9 +53,6 @@ const Profile = () => {
             <p className="profile-field-value">{user?.email}</p>
           </div>
         </div>
-        <p className="profile-edit-note">
-          Profile editing will be available in a future update.
-        </p>
       </motion.div>
     </div>
   );

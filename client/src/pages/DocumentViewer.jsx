@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { Worker, Viewer } from '@react-pdf-viewer/core';
@@ -39,11 +39,14 @@ const TABS = [
 const DocumentViewer = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // ── Document ─────────────────────────────────────────────────────────────────
   const [document, setDocument] = useState(null);
   const [docLoading, setDocLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('content');
+  // Allows navigating here with a specific tab pre-selected, e.g. from the
+  // Favorites page linking straight to a document's Flashcards tab.
+  const [activeTab, setActiveTab] = useState(location.state?.initialTab || 'content');
 
   // ── Chat state ───────────────────────────────────────────────────────────────
   const [chatMessages, setChatMessages] = useState([]);
