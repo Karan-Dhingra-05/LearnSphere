@@ -3,7 +3,7 @@
 # LearnSphere
 
 An AI-powered document learning platform built with the MERN stack.  
-Upload PDFs and use Retrieval-Augmented Generation to chat with your content, generate summaries, and study smarter.
+Upload PDFs and use Retrieval-Augmented Generation to chat with your content, generate summaries, and study with AI-built flashcards and quizzes.
 
 <br/>
 
@@ -24,27 +24,50 @@ Upload PDFs and use Retrieval-Augmented Generation to chat with your content, ge
 - 🔑 JWT Authentication via HTTP-only cookies
 - 🛡️ Secure Login & Signup with bcrypt password hashing
 - 🔒 Protected routes — all data scoped to the authenticated user
+- 🚦 Rate limiting on authentication and AI generation endpoints
 
 ### 📄 Document Processing
-- 📤 Upload PDF documents (up to 50 MB)
+- 📤 Upload PDFs (up to 50 MB) from a compact modal on the Dashboard, Documents, or Progress page
 - 🔍 Automatic text extraction at upload time
-- 🗂️ Document management — list, view, and delete
+- ✂️ Automatic chunking into `DocumentChunk` records for retrieval
+- 🗂️ Document management — list, view, search by title, and delete
 - 📖 Embedded PDF viewer
 
 ### 🤖 AI & RAG
-- 💬 AI Chat powered by Retrieval-Augmented Generation (RAG)
+- 💬 AI Chat powered by Retrieval-Augmented Generation — only the most relevant chunks are sent, never the whole document
 - 🧠 Local text embeddings using `all-MiniLM-L6-v2` (384 dimensions)
 - ⚡ FAISS vector search for fast, accurate chunk retrieval
-- 📝 AI-generated document summaries with server-side caching
-- 🃏 AI-generated flashcards with favorites and reviewed tracking
-- 📝 AI-generated multiple-choice quizzes with server-side scoring and retake/regenerate support
+- 📝 AI-generated summaries with chunk-based batching for large documents, cached server-side
+- 🃏 AI-generated flashcards — exactly 10 per set, with favorite and reviewed tracking
+- ❓ AI-generated quizzes — 10 multiple-choice questions, scored server-side, with retakes and attempt history
+- 🧾 JSON-mode generation with strict validation of the final card and question counts
 
 ### 🎨 User Experience
 - 📊 Dashboard with statistics and recent documents
 - 📈 Per-document learning progress (flashcard review status, quiz scores and attempt history)
+- ⭐ Favorites — revisit flashcards you've starred across every document in one place
+- 🔎 Instant document search from the top bar
 - 🗃️ Responsive sidebar navigation
 - ✨ Smooth animations with Framer Motion
-- 🌙 Clean, custom CSS design system
+- 🎨 Clean, custom CSS design system (single light theme)
+
+---
+
+## How You Use It
+
+```
+Upload a PDF
+     │
+     ▼
+  Document ──→ Content · Chat · Summary · Flashcards · Quiz
+     │
+     ▼
+Progress · Favorites
+```
+
+Each document opens in a tabbed viewer: read the original PDF (**Content**), ask questions about it
+(**Chat**), generate a structured **Summary**, study **Flashcards**, or test yourself with a **Quiz**.
+Flashcard reviews, favorites, and quiz attempts then roll up into **Progress** and **Favorites**.
 
 ---
 
@@ -62,28 +85,87 @@ Upload PDFs and use Retrieval-Augmented Generation to chat with your content, ge
 | Authentication  | JWT (HTTP-only cookies), bcryptjs                |
 | File Uploads    | Multer                                           |
 | PDF Parsing     | pdf-parse                                        |
+| Containerization| Docker, Docker Compose, Nginx (serves the build) |
 
 ---
 
 ## Architecture
 
 ```
-React (Vite)
+React (Vite)  ──build──▶  Nginx (production container)
      │
      │  HTTP / REST (axios, cookie auth)
      ▼
 Express API (Node.js)
      │
-     ├── MongoDB (documents, users, chunks)
+     ├── MongoDB (users, documents, chunks, flashcards, quizzes, attempts)
      │
      └── RAG Pipeline
               │
-              ├── pdf-parse        → extract text at upload
-              ├── chunkService     → split into overlapping chunks
-              ├── embeddingService → embed with all-MiniLM-L6-v2
-              ├── FAISS            → store & search vectors
-              └── Groq LLM         → generate responses from retrieved context
+              ├── pdf-parse        → extract text once, at upload
+              ├── chunkService     → split into overlapping DocumentChunks
+              ├── embeddingService → embed locally with all-MiniLM-L6-v2
+              ├── FAISS            → store & search 384-dim vectors
+              └── Groq LLM         → generate from retrieved context
 ```
+
+### How the AI pipeline works
+
+**Ingestion.** A PDF is parsed exactly once, at upload. The extracted text is stored on the document
+record, then split into overlapping `DocumentChunk` records. Each chunk is embedded locally with
+`all-MiniLM-L6-v2` — no embedding API calls — and the resulting 384-dimension vectors are indexed in
+FAISS and persisted to disk. Nothing is re-parsed or re-embedded on later requests.
+
+**Chat** retrieves only the chunks most relevant to the question from FAISS and sends those as
+context. The full document is never sent to the LLM.
+
+**Summary** reads the stored chunks rather than the raw PDF. Small documents are summarised in a
+single call; larger ones are summarised in sequential batches and then consolidated into one final
+summary.
+
+**Flashcards and Quiz** share the same generation architecture. Small documents are handled in a
+single pass. Larger documents are processed as sequential batches that each contribute a few
+candidates, followed by **one** merge call that selects, de-duplicates, and finalises the set. Both
+generate in JSON mode and validate the result — a set is rejected rather than silently saved if it
+doesn't contain exactly the expected number of items, or if a quiz question doesn't have exactly four
+options with a single matching correct answer.
+
+**Model.** All generation runs on Groq using `openai/gpt-oss-120b`. LLM calls are issued
+sequentially, never in parallel, to stay within rate limits.
+
+---
+
+## Study Features
+
+### 🃏 Flashcards
+- Exactly **10** flashcards per document, each with a question, answer, and difficulty (Easy / Medium / Hard)
+- Mark cards as **reviewed** as you flip through them
+- **Favorite** any card to revisit it later from the Favorites page
+- The generated set is **cached** per document — regenerate at any time to replace it
+
+### ❓ Quiz
+- **10** multiple-choice questions per document
+- **4 options** per question, exactly **one** correct answer, plus an explanation and a difficulty rating
+- **Scored server-side** — answers are graded against the stored quiz, never trusted from the client
+- **Retake** as often as you like; each submission is recorded as a separate attempt
+- **Regenerate** to build a fresh question set — previous attempts are preserved
+- The quiz set is **cached** per document, with attempt history stored separately
+
+### ⭐ Favorites
+Flashcards you star are collected on the **Favorites** page alongside the document they came from, so
+you can review starred cards across every document in one place — and unfavorite them from there.
+
+### 📈 Progress
+Tracked per document:
+
+| Metric              | Description                                              |
+|---------------------|----------------------------------------------------------|
+| Flashcards reviewed | How many cards in the set have been marked reviewed      |
+| Favorites           | How many cards in the set are starred                    |
+| Quiz attempts       | Number of times the quiz has been submitted              |
+| Average score       | Mean score across all attempts for that document         |
+| Best score          | Highest score achieved                                   |
+| Last attempt        | When the quiz was most recently taken                    |
 
 ---
 
@@ -91,7 +173,11 @@ Express API (Node.js)
 
 ```
 LearnSphere/
+├── docker-compose.yml          # Two services: server + client
+│
 ├── client/                     # React frontend (Vite)
+│   ├── Dockerfile              # Multi-stage build → Nginx
+│   ├── nginx.conf              # Static serving + SPA fallback
 │   └── src/
 │       ├── components/         # Reusable UI components
 │       ├── context/            # Auth context (React Context API)
@@ -102,9 +188,10 @@ LearnSphere/
 │       └── utils/              # Shared utility functions
 │
 └── server/                     # Express backend
+    ├── Dockerfile              # Node 20 Bookworm Slim
     ├── config/                 # DB connection, Multer config
     ├── controllers/            # Route handler logic
-    ├── middleware/             # Auth guard, error handler
+    ├── middleware/             # Auth guard, rate limiters, error handler
     ├── models/                 # Mongoose schemas
     ├── routes/                 # Express routers
     ├── services/               # LLM, embeddings, chunking, retrieval
@@ -173,6 +260,59 @@ The app will be available at `http://localhost:5173`.
 
 ---
 
+## Running with Docker
+
+The project ships with a two-service Docker Compose setup. MongoDB Atlas and the Groq API stay
+**external** — neither runs in a container.
+
+| Service  | Image base              | Role                                                    | Port          |
+|----------|-------------------------|---------------------------------------------------------|---------------|
+| `server` | `node:20-bookworm-slim` | Express API, embeddings, FAISS                          | `5002:5002`   |
+| `client` | `nginx:1.27-alpine`     | Serves the production React build with SPA fallback     | `5173:80`     |
+
+> **Why Bookworm and not Alpine?** `faiss-node` and `onnxruntime-node` (via
+> `@huggingface/transformers`) ship prebuilt native binaries built against glibc, which musl-based
+> Alpine images can't load.
+
+### 1. Configure
+
+The backend reads its runtime variables from `server/.env` (via `env_file`); that file is never
+copied into the image. The frontend is different — `VITE_API_URL` is compiled into the JavaScript
+bundle at **build time**, so Compose passes it as a build argument, read from a root-level `.env`:
+
+```bash
+cp .env.example .env     # contains VITE_API_URL=http://localhost:5002/api
+```
+
+Because that URL is executed in the user's browser, it must point at the **published host address**
+(`http://localhost:5002/api`) — not the internal Compose service name.
+
+### 2. Run
+
+```bash
+docker compose build
+docker compose up -d
+docker compose down
+docker compose logs -f
+```
+
+The app is available at `http://localhost:5173`, the API at `http://localhost:5002`.
+
+### Persistent data
+
+Uploaded PDFs and the FAISS index live in named volumes, so they survive container recreation:
+
+| Volume         | Mount point     | Contents                     |
+|----------------|-----------------|------------------------------|
+| `uploads_data` | `/app/uploads`  | Uploaded PDF files           |
+| `faiss_data`   | `/app/faiss`    | FAISS index + metadata       |
+
+Neither directory's local contents are copied into the image. `docker compose down` preserves both
+volumes — use `docker compose down -v` only when you intend to **delete** all uploaded documents and
+the vector index.
+
+---
+
 ## Environment Variables
 
 | Variable       | Description                                              | Required |
@@ -183,7 +323,7 @@ The app will be available at `http://localhost:5173`.
 | `PORT`         | Express server port (default: `5002`)                    | No       |
 | `NODE_ENV`     | `development` or `production`                            | No       |
 | `CLIENT_URL`   | Frontend origin for CORS (default: `http://localhost:5173`) | No    |
-| `VITE_API_URL` | Backend API base URL used by the React app               | Yes      |
+| `VITE_API_URL` | Backend API base URL used by the React app — read at **build time** (`client/.env` locally, root `.env` for Docker) | Yes |
 
 ---
 
@@ -239,6 +379,12 @@ The app will be available at `http://localhost:5173`.
 | POST   | `/:documentId`             | Generate and cache a quiz set                                             |
 | POST   | `/:documentId/regenerate`  | Force-regenerate the quiz set (past attempts are preserved)               |
 | POST   | `/:documentId/submit`      | Submit answers; score is computed server-side and an attempt is recorded |
+
+### Favorites — `/api/favorites`
+
+| Method | Endpoint | Description                                                            |
+|--------|----------|------------------------------------------------------------------------|
+| GET    | `/`      | Return every favorited flashcard across the user's documents           |
 
 ### Progress — `/api/progress`
 

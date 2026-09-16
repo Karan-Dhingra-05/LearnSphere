@@ -1,0 +1,27 @@
+services:
+  server:
+    build:
+      context: ./server
+    ports:
+      - "5002:5002"
+    env_file:
+      - ./server/.env
+    volumes:
+      - uploads_data:/app/uploads
+      - faiss_data:/app/faiss
+    restart: unless-stopped
+
+  client:
+    build:
+      context: ./client
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+    ports:
+      - "5173:80"
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  uploads_data:
+  faiss_data:
