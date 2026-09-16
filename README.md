@@ -13,6 +13,7 @@ Upload PDFs and use Retrieval-Augmented Generation to chat with your content, ge
 ![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)
 ![Groq](https://img.shields.io/badge/Groq-F55036?style=for-the-badge&logo=groq&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 
 </div>
 
@@ -21,12 +22,14 @@ Upload PDFs and use Retrieval-Augmented Generation to chat with your content, ge
 ## Features
 
 ### 🔐 Authentication & Security
+
 - 🔑 JWT Authentication via HTTP-only cookies
 - 🛡️ Secure Login & Signup with bcrypt password hashing
 - 🔒 Protected routes — all data scoped to the authenticated user
 - 🚦 Rate limiting on authentication and AI generation endpoints
 
 ### 📄 Document Processing
+
 - 📤 Upload PDFs (up to 50 MB) from a compact modal on the Dashboard, Documents, or Progress page
 - 🔍 Automatic text extraction at upload time
 - ✂️ Automatic chunking into `DocumentChunk` records for retrieval
@@ -34,6 +37,7 @@ Upload PDFs and use Retrieval-Augmented Generation to chat with your content, ge
 - 📖 Embedded PDF viewer
 
 ### 🤖 AI & RAG
+
 - 💬 AI Chat powered by Retrieval-Augmented Generation — only the most relevant chunks are sent, never the whole document
 - 🧠 Local text embeddings using `all-MiniLM-L6-v2` (384 dimensions)
 - ⚡ FAISS vector search for fast, accurate chunk retrieval
@@ -43,6 +47,7 @@ Upload PDFs and use Retrieval-Augmented Generation to chat with your content, ge
 - 🧾 JSON-mode generation with strict validation of the final card and question counts
 
 ### 🎨 User Experience
+
 - 📊 Dashboard with statistics and recent documents
 - 📈 Per-document learning progress (flashcard review status, quiz scores and attempt history)
 - ⭐ Favorites — revisit flashcards you've starred across every document in one place
@@ -73,19 +78,19 @@ Flashcard reviews, favorites, and quiz attempts then roll up into **Progress** a
 
 ## Tech Stack
 
-| Layer           | Technology                                       |
-|-----------------|--------------------------------------------------|
-| Frontend        | React 19, Vite, React Router, Framer Motion      |
-| Styling         | Vanilla CSS (custom design system)               |
-| Backend         | Node.js, Express.js                              |
-| Database        | MongoDB, Mongoose                                |
-| Vector Store    | FAISS (`faiss-node`)                             |
-| Embeddings      | `@huggingface/transformers` (all-MiniLM-L6-v2)  |
-| LLM Provider    | Groq API (openai/gpt-oss-120b)                   |
-| Authentication  | JWT (HTTP-only cookies), bcryptjs                |
-| File Uploads    | Multer                                           |
-| PDF Parsing     | pdf-parse                                        |
-| Containerization| Docker, Docker Compose, Nginx (serves the build) |
+| Layer            | Technology                                       |
+| ---------------- | ------------------------------------------------ |
+| Frontend         | React 19, Vite, React Router, Framer Motion      |
+| Styling          | Vanilla CSS (custom design system)               |
+| Backend          | Node.js, Express.js                              |
+| Database         | MongoDB, Mongoose                                |
+| Vector Store     | FAISS (`faiss-node`)                             |
+| Embeddings       | `@huggingface/transformers` (all-MiniLM-L6-v2)   |
+| LLM Provider     | Groq API (openai/gpt-oss-120b)                   |
+| Authentication   | JWT (HTTP-only cookies), bcryptjs                |
+| File Uploads     | Multer                                           |
+| PDF Parsing      | pdf-parse                                        |
+| Containerization | Docker, Docker Compose, Nginx (serves the build) |
 
 ---
 
@@ -138,12 +143,14 @@ sequentially, never in parallel, to stay within rate limits.
 ## Study Features
 
 ### 🃏 Flashcards
+
 - Exactly **10** flashcards per document, each with a question, answer, and difficulty (Easy / Medium / Hard)
 - Mark cards as **reviewed** as you flip through them
 - **Favorite** any card to revisit it later from the Favorites page
 - The generated set is **cached** per document — regenerate at any time to replace it
 
 ### ❓ Quiz
+
 - **10** multiple-choice questions per document
 - **4 options** per question, exactly **one** correct answer, plus an explanation and a difficulty rating
 - **Scored server-side** — answers are graded against the stored quiz, never trusted from the client
@@ -152,20 +159,22 @@ sequentially, never in parallel, to stay within rate limits.
 - The quiz set is **cached** per document, with attempt history stored separately
 
 ### ⭐ Favorites
+
 Flashcards you star are collected on the **Favorites** page alongside the document they came from, so
 you can review starred cards across every document in one place — and unfavorite them from there.
 
 ### 📈 Progress
+
 Tracked per document:
 
-| Metric              | Description                                              |
-|---------------------|----------------------------------------------------------|
-| Flashcards reviewed | How many cards in the set have been marked reviewed      |
-| Favorites           | How many cards in the set are starred                    |
-| Quiz attempts       | Number of times the quiz has been submitted              |
-| Average score       | Mean score across all attempts for that document         |
-| Best score          | Highest score achieved                                   |
-| Last attempt        | When the quiz was most recently taken                    |
+| Metric              | Description                                         |
+| ------------------- | --------------------------------------------------- |
+| Flashcards reviewed | How many cards in the set have been marked reviewed |
+| Favorites           | How many cards in the set are starred               |
+| Quiz attempts       | Number of times the quiz has been submitted         |
+| Average score       | Mean score across all attempts for that document    |
+| Best score          | Highest score achieved                              |
+| Last attempt        | When the quiz was most recently taken               |
 
 ---
 
@@ -230,6 +239,7 @@ cd ../client && npm install
 ### 3. Configure environment variables
 
 **`server/.env`**
+
 ```env
 MONGO_URI=your_mongodb_connection_string
 JWT_SECRET=your_jwt_secret_key
@@ -240,6 +250,7 @@ CLIENT_URL=http://localhost:5173
 ```
 
 **`client/.env`**
+
 ```env
 VITE_API_URL=http://localhost:5002/api
 ```
@@ -265,10 +276,10 @@ The app will be available at `http://localhost:5173`.
 The project ships with a two-service Docker Compose setup. MongoDB Atlas and the Groq API stay
 **external** — neither runs in a container.
 
-| Service  | Image base              | Role                                                    | Port          |
-|----------|-------------------------|---------------------------------------------------------|---------------|
-| `server` | `node:20-bookworm-slim` | Express API, embeddings, FAISS                          | `5002:5002`   |
-| `client` | `nginx:1.27-alpine`     | Serves the production React build with SPA fallback     | `5173:80`     |
+| Service  | Image base              | Role                                                | Port        |
+| -------- | ----------------------- | --------------------------------------------------- | ----------- |
+| `server` | `node:20-bookworm-slim` | Express API, embeddings, FAISS                      | `5002:5002` |
+| `client` | `nginx:1.27-alpine`     | Serves the production React build with SPA fallback | `5173:80`   |
 
 > **Why Bookworm and not Alpine?** `faiss-node` and `onnxruntime-node` (via
 > `@huggingface/transformers`) ship prebuilt native binaries built against glibc, which musl-based
@@ -302,10 +313,10 @@ The app is available at `http://localhost:5173`, the API at `http://localhost:50
 
 Uploaded PDFs and the FAISS index live in named volumes, so they survive container recreation:
 
-| Volume         | Mount point     | Contents                     |
-|----------------|-----------------|------------------------------|
-| `uploads_data` | `/app/uploads`  | Uploaded PDF files           |
-| `faiss_data`   | `/app/faiss`    | FAISS index + metadata       |
+| Volume         | Mount point    | Contents               |
+| -------------- | -------------- | ---------------------- |
+| `uploads_data` | `/app/uploads` | Uploaded PDF files     |
+| `faiss_data`   | `/app/faiss`   | FAISS index + metadata |
 
 Neither directory's local contents are copied into the image. `docker compose down` preserves both
 volumes — use `docker compose down -v` only when you intend to **delete** all uploaded documents and
@@ -315,15 +326,15 @@ the vector index.
 
 ## Environment Variables
 
-| Variable       | Description                                              | Required |
-|----------------|----------------------------------------------------------|----------|
-| `MONGO_URI`    | MongoDB connection string                                | Yes      |
-| `JWT_SECRET`   | Secret key for signing JWT tokens                        | Yes      |
-| `GROQ_API_KEY` | Groq API key for LLM inference                           | Yes      |
-| `PORT`         | Express server port (default: `5002`)                    | No       |
-| `NODE_ENV`     | `development` or `production`                            | No       |
-| `CLIENT_URL`   | Frontend origin for CORS (default: `http://localhost:5173`) | No    |
-| `VITE_API_URL` | Backend API base URL used by the React app — read at **build time** (`client/.env` locally, root `.env` for Docker) | Yes |
+| Variable       | Description                                                                                                         | Required |
+| -------------- | ------------------------------------------------------------------------------------------------------------------- | -------- |
+| `MONGO_URI`    | MongoDB connection string                                                                                           | Yes      |
+| `JWT_SECRET`   | Secret key for signing JWT tokens                                                                                   | Yes      |
+| `GROQ_API_KEY` | Groq API key for LLM inference                                                                                      | Yes      |
+| `PORT`         | Express server port (default: `5002`)                                                                               | No       |
+| `NODE_ENV`     | `development` or `production`                                                                                       | No       |
+| `CLIENT_URL`   | Frontend origin for CORS (default: `http://localhost:5173`)                                                         | No       |
+| `VITE_API_URL` | Backend API base URL used by the React app — read at **build time** (`client/.env` locally, root `.env` for Docker) | Yes      |
 
 ---
 
@@ -331,71 +342,71 @@ the vector index.
 
 ### Authentication — `/api/auth`
 
-| Method | Endpoint      | Description                          |
-|--------|---------------|--------------------------------------|
-| POST   | `/register`   | Create a new user account            |
-| POST   | `/login`      | Log in and receive a session cookie  |
-| POST   | `/logout`     | Invalidate the session cookie        |
-| GET    | `/me`         | Get the authenticated user's profile |
+| Method | Endpoint    | Description                          |
+| ------ | ----------- | ------------------------------------ |
+| POST   | `/register` | Create a new user account            |
+| POST   | `/login`    | Log in and receive a session cookie  |
+| POST   | `/logout`   | Invalidate the session cookie        |
+| GET    | `/me`       | Get the authenticated user's profile |
 
 ### Documents — `/api/documents`
 
-| Method | Endpoint   | Description                                          |
-|--------|------------|------------------------------------------------------|
-| POST   | `/upload`  | Upload a PDF; extracts text and runs the RAG pipeline |
-| GET    | `/`        | List all documents for the current user              |
-| GET    | `/:id`     | Get metadata for a single document                   |
-| DELETE | `/:id`     | Delete document, PDF file, chunks, and FAISS vectors |
+| Method | Endpoint  | Description                                           |
+| ------ | --------- | ----------------------------------------------------- |
+| POST   | `/upload` | Upload a PDF; extracts text and runs the RAG pipeline |
+| GET    | `/`       | List all documents for the current user               |
+| GET    | `/:id`    | Get metadata for a single document                    |
+| DELETE | `/:id`    | Delete document, PDF file, chunks, and FAISS vectors  |
 
 ### AI Chat — `/api/ai`
 
-| Method | Endpoint | Description                                                  |
-|--------|----------|--------------------------------------------------------------|
+| Method | Endpoint | Description                                                    |
+| ------ | -------- | -------------------------------------------------------------- |
 | POST   | `/chat`  | Send a message; retrieves relevant chunks via RAG and responds |
 
 ### Summary — `/api/summary`
 
-| Method | Endpoint                  | Description                                |
-|--------|---------------------------|--------------------------------------------|
-| GET    | `/:documentId`            | Return cached summary (or `null`)          |
-| POST   | `/:documentId`            | Generate and cache a summary               |
-| POST   | `/:documentId/regenerate` | Force-regenerate an existing summary       |
+| Method | Endpoint                  | Description                          |
+| ------ | ------------------------- | ------------------------------------ |
+| GET    | `/:documentId`            | Return cached summary (or `null`)    |
+| POST   | `/:documentId`            | Generate and cache a summary         |
+| POST   | `/:documentId/regenerate` | Force-regenerate an existing summary |
 
 ### Flashcards — `/api/flashcards`
 
-| Method | Endpoint                              | Description                                                  |
-|--------|-----------------------------------------|---------------------------------------------------------------|
-| GET    | `/:documentId`                        | Return the cached flashcard set (or `null`)                    |
-| POST   | `/:documentId`                        | Generate and cache a flashcard set                             |
-| POST   | `/:documentId/regenerate`             | Force-regenerate the flashcard set                             |
-| PATCH  | `/:documentId/cards/:cardId/favorite` | Toggle favorite on a single flashcard                          |
-| PATCH  | `/:documentId/cards/:cardId/reviewed` | Mark a single flashcard as reviewed                            |
+| Method | Endpoint                              | Description                                 |
+| ------ | ------------------------------------- | ------------------------------------------- |
+| GET    | `/:documentId`                        | Return the cached flashcard set (or `null`) |
+| POST   | `/:documentId`                        | Generate and cache a flashcard set          |
+| POST   | `/:documentId/regenerate`             | Force-regenerate the flashcard set          |
+| PATCH  | `/:documentId/cards/:cardId/favorite` | Toggle favorite on a single flashcard       |
+| PATCH  | `/:documentId/cards/:cardId/reviewed` | Mark a single flashcard as reviewed         |
 
 ### Quiz — `/api/quiz`
 
 | Method | Endpoint                  | Description                                                              |
-|--------|----------------------------|----------------------------------------------------------------------------|
-| GET    | `/:documentId`             | Return the cached quiz set (or `null`)                                    |
-| POST   | `/:documentId`             | Generate and cache a quiz set                                             |
-| POST   | `/:documentId/regenerate`  | Force-regenerate the quiz set (past attempts are preserved)               |
-| POST   | `/:documentId/submit`      | Submit answers; score is computed server-side and an attempt is recorded |
+| ------ | ------------------------- | ------------------------------------------------------------------------ |
+| GET    | `/:documentId`            | Return the cached quiz set (or `null`)                                   |
+| POST   | `/:documentId`            | Generate and cache a quiz set                                            |
+| POST   | `/:documentId/regenerate` | Force-regenerate the quiz set (past attempts are preserved)              |
+| POST   | `/:documentId/submit`     | Submit answers; score is computed server-side and an attempt is recorded |
 
 ### Favorites — `/api/favorites`
 
-| Method | Endpoint | Description                                                            |
-|--------|----------|------------------------------------------------------------------------|
-| GET    | `/`      | Return every favorited flashcard across the user's documents           |
+| Method | Endpoint | Description                                                  |
+| ------ | -------- | ------------------------------------------------------------ |
+| GET    | `/`      | Return every favorited flashcard across the user's documents |
 
 ### Progress — `/api/progress`
 
 | Method | Endpoint | Description                                                          |
-|--------|----------|--------------------------------------------------------------------------|
+| ------ | -------- | -------------------------------------------------------------------- |
 | GET    | `/`      | Return per-document flashcard and quiz progress for the current user |
 
 ### Dashboard — `/api/dashboard`
 
-| Method | Endpoint | Description                                                    |
-|--------|----------|----------------------------------------------------------------|
+| Method | Endpoint | Description                                                                                                 |
+| ------ | -------- | ----------------------------------------------------------------------------------------------------------- |
 | GET    | `/`      | Return stats (documents, flashcard sets, quiz attempts, flashcards reviewed/favorited) and recent documents |
 
 ---
